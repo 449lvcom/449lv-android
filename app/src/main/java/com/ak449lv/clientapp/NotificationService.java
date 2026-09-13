@@ -35,6 +35,9 @@ public class NotificationService extends Service {
     private static final String ACTION_START = "START";
     private static final String ACTION_STOP = "STOP";
     private static final String TAG = "NotificationService";
+    private static final String KEY_COOKIE = "cookie";
+
+    private static volatile boolean sRunning = false;
 
     private Handler handler;
     private boolean running = false;
@@ -65,9 +68,58 @@ public class NotificationService extends Service {
         }
     }
 
+    public static boolean isActive() {
+        return sRunning;
+    }
+
+    public static void stopService(Context c) {
+        try {
+            Intent i = new Intent(c, NotificationService.class).setAction(ACTION_STOP);
+            c.startService(i);
+        } catch (Throwable t) {
+            android.util.Log.e(TAG, "stopService failed: " + t);
+        }
+    }
+
+    public static void sendTestNotification(Context ctx) {
+        try {
+            ensureChannels(ctx);
+            NotificationManager nm = (NotificationManager) ctx.getSystemService(Context.NOTIFICATION_SERVICE);
+            if (nm == null) return;
+            Intent open = new Intent(ctx, MainActivity.class);
+            open.setFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+            open.putExtra("url", BASE + "/menu-admin");
+            PendingIntent pi = PendingIntent.getActivity(ctx, 779977, open,
+                    PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+            String title = "449LV — إشعار تجريبي";
+            String text = "إشعارات الطلبات تعمل بشكل صحيح على هذا الجهاز ✓";
+            Notification.Builder b;
+            if (Build.VERSION.SDK_INT >= 26) {
+                b = new Notification.Builder(ctx, CH_ORDERS);
+            } else {
+                b = new Notification.Builder(ctx);
+            }
+            b.setSmallIcon(R.mipmap.ic_launcher)
+                    .setContentTitle(title)
+                    .setContentText(text)
+                    .setStyle(new Notification.BigTextStyle().bigText(text))
+                    .setContentIntent(pi)
+                    .setAutoCancel(true)
+                    .setCategory(Notification.CATEGORY_ALARM);
+            if (Build.VERSION.SDK_INT < 26) {
+                b.setPriority(Notification.PRIORITY_HIGH).setDefaults(Notification.DEFAULT_ALL);
+            }
+            nm.notify(779977, b.build());
+        } catch (Throwable t) {
+            android.util.Log.e(TAG, "sendTestNotification failed: " + t);
+        }
+    }
+
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         if (intent != null && ACTION_STOP.equals(intent.getAction())) {
+            running = false;
+            sRunning = false;
             stopSelf();
             return START_NOT_STICKY;
         }
@@ -80,6 +132,7 @@ public class NotificationService extends Service {
         startAsForeground();
         if (!running) {
             running = true;
+            sRunning = true;
             restoreSeen();
             handler.post(poller);
         }
@@ -96,6 +149,7 @@ public class NotificationService extends Service {
             else startService(i);
             if (handler != null && !running) {
                 running = true;
+                sRunning = true;
                 handler.post(poller);
             }
         } catch (Throwable t) {
@@ -107,6 +161,7 @@ public class NotificationService extends Service {
     @Override
     public void onDestroy() {
         running = false;
+        sRunning = false;
         if (handler != null) handler.removeCallbacksAndMessages(null);
         super.onDestroy();
     }
@@ -117,8 +172,12 @@ public class NotificationService extends Service {
     }
 
     private void ensureChannels() {
+        ensureChannels(this);
+    }
+
+    private static void ensureChannels(Context ctx) {
         if (Build.VERSION.SDK_INT < 26) return;
-        NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+        NotificationManager nm = (NotificationManager) ctx.getSystemService(NOTIFICATION_SERVICE);
         if (nm == null) return;
         if (nm.getNotificationChannel(CH_ORDERS) == null) {
             NotificationChannel ch = new NotificationChannel(CH_ORDERS, "طلبات جديدة", NotificationManager.IMPORTANCE_HIGH);
@@ -201,6 +260,14 @@ public class NotificationService extends Service {
             cookie = CookieManager.getInstance().getCookie(BASE + "/app");
         } catch (Throwable t) {
         }
+        if (cookie == null || cookie.isEmpty()) {
+            // عند تشغيل الخدمة في عملية جديدة بلا WebView (كإعادة التشغيل بعد الإقلاع)
+            // لا يكون مخزن الكوكيز مهيّأ — نعتمد على الكوكي المحفوظ من آخر فتح للتطبيق
+            try {
+                cookie = getSharedPreferences(PREFS, MODE_PRIVATE).getString(KEY_COOKIE, null);
+            } catch (Throwable t) {
+            }
+        }
         if (cookie == null || cookie.isEmpty()) return; // لا جلسة بعد — أعد المحاولة لاحقاً
 
         HttpURLConnection c = null;
@@ -214,6 +281,12 @@ public class NotificationService extends Service {
             c.setRequestMethod("GET");
             int code = c.getResponseCode();
             if (code != 200) return;
+
+            // تحديث الكوكي المحفوظ بعد كل نجاح (يستمر العمل بعد إعادة التشغيل)
+            try {
+                getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(KEY_COOKIE, cookie).apply();
+            } catch (Throwable t) {
+            }
 
             BufferedReader r = new BufferedReader(new InputStreamReader(c.getInputStream(), "UTF-8"));
             StringBuilder sb = new StringBuilder();

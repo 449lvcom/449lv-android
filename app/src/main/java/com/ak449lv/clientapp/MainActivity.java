@@ -40,8 +40,16 @@ public class MainActivity extends Activity {
             cm.setAcceptThirdPartyCookies(web, true);
         }
 
-        web.setWebViewClient(new WebViewClient());
+        web.setWebViewClient(new WebViewClient() {
+            @Override
+            public void onPageFinished(WebView view, String url) {
+                saveSessionCookie();
+            }
+        });
         web.setWebChromeClient(new WebChromeClient());
+
+        // جسر JavaScript → أندرويد: تتحكم أزرار الإشعارات في الموقع بالخدمة الأساسية داخل التطبيق
+        web.addJavascriptInterface(new LvBridge(), "LvNative");
 
         // معالجة رابط الإشعار: فتح رابط الدخول / لوحة التحكم عند الضغط
         String url = null;
@@ -81,6 +89,48 @@ public class MainActivity extends Activity {
         watchdogRun(1);
     }
 
+    private void saveSessionCookie() {
+        try {
+            String c = CookieManager.getInstance().getCookie("https://449lv.com/app");
+            if (c != null && !c.isEmpty()) {
+                getSharedPreferences("pushsrv", MODE_PRIVATE).edit().putString("cookie", c).apply();
+            }
+        } catch (Throwable t) {
+        }
+    }
+
+    private class LvBridge {
+        @android.webkit.JavascriptInterface
+        public boolean isEnabled() {
+            return NotificationService.isActive() && areNotificationsEnabled();
+        }
+
+        @android.webkit.JavascriptInterface
+        public String getPermission() {
+            if (Build.VERSION.SDK_INT >= 33) {
+                return checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)
+                        == PackageManager.PERMISSION_GRANTED ? "granted" : "denied";
+            }
+            return areNotificationsEnabled() ? "granted" : "denied";
+        }
+
+        @android.webkit.JavascriptInterface
+        public void requestPermission() {
+            runOnUiThread(() -> requestNotificationPermission());
+        }
+
+        @android.webkit.JavascriptInterface
+        public void sendTest() {
+            NotificationService.sendTestNotification(MainActivity.this);
+            runOnUiThread(() -> Toast.makeText(MainActivity.this, "أُرسل إشعار تجريبي ✓", Toast.LENGTH_SHORT).show());
+        }
+
+        @android.webkit.JavascriptInterface
+        public void stop() {
+            NotificationService.stopService(MainActivity.this);
+        }
+    }
+
     @Override
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
@@ -97,6 +147,13 @@ public class MainActivity extends Activity {
             }
             // بعد انتهاء حوار الإذن اطلب استثناء البطارية (لا تداخل بين الحوارات)
             ensureBatteryOptExempt();
+
+            // إبلاغ جافاسكريبت (زر الإشعارات في الموقع) بنتيجة طلب الإذن
+            if (web != null) {
+                web.evaluateJavascript(
+                        "try{if(window.__lvPermCb){window.__lvPermCb(" + granted + ");window.__lvPermCb=null;}}catch(e){}",
+                        null);
+            }
         }
     }
 
