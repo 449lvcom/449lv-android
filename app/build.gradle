@@ -2,21 +2,48 @@ plugins {
     id 'com.android.application'
 }
 
+// بيانات التوقيع: مفتاح ثابت واحد لكل النسخ حتى تنجح الترقيبات المباشرة
+def keystoreProps = new Properties()
+def keystoreFile = rootProject.file("app/keystore.properties")
+if (keystoreFile.exists()) {
+    keystoreProps.load(new FileInputStream(keystoreFile))
+}
+def signingStoreFile = System.getenv("KEYSTORE_FILE") ?: keystoreProps.getProperty("storeFile", "release.keystore")
+def signingStorePassword = System.getenv("KEYSTORE_PASSWORD") ?: keystoreProps.getProperty("storePassword", "449lvRelease2026!keystore")
+def signingKeyAlias = System.getenv("KEYSTORE_ALIAS") ?: keystoreProps.getProperty("keyAlias", "449lv")
+def signingKeyPassword = System.getenv("KEYSTORE_KEY_PASSWORD") ?: keystoreProps.getProperty("keyPassword", "449lvRelease2026!keystore")
+
 android {
     namespace 'com.ak449lv.clientapp'
     compileSdk 34
+
+    signingConfigs {
+        release {
+            storeFile rootProject.file("app/" + signingStoreFile)
+            storePassword signingStorePassword
+            keyAlias signingKeyAlias
+            keyPassword signingKeyPassword
+            storeType keystoreProps.getProperty("storeType", "PKCS12")
+            enableV1Signing true
+            enableV2Signing true
+        }
+    }
 
     defaultConfig {
         applicationId "com.ak449lv.clientapp"
         minSdk 24
         targetSdk 34
-        versionCode 3
-        versionName "2.0"
+        versionCode 4
+        versionName "2.1"
     }
 
     buildTypes {
         release {
             minifyEnabled false
+            signingConfig signingConfigs.release
+        }
+        debug {
+            signingConfig signingConfigs.release
         }
     }
 

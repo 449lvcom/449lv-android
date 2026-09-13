@@ -24,12 +24,19 @@ jobs:
           gradle-version: '8.10'
           cache-disabled: false
 
-      - name: Build debug APK
-        run: gradle assembleDebug
+      - name: Build APKs (debug + release signed)
+        run: gradle assembleDebug assembleRelease
 
-      - name: Upload APK
+      - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: 449lv-apk
+          name: 449lv-apk-debug
           path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+
+      - name: Upload release APK (signed - لترقية مباشرة)
+        uses: actions/upload-artifact@v4
+        with:
+          name: 449lv-apk-release
+          path: app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
