@@ -11,6 +11,10 @@ public class RestartReceiver extends BroadcastReceiver {
         String a = intent.getAction();
         if (Intent.ACTION_BOOT_COMPLETED.equals(a) || Intent.ACTION_MY_PACKAGE_REPLACED.equals(a)) {
             NotificationService.start(context);
+        } else if ("com.ak449lv.clientapp.RESTART".equals(a)) {
+            if (!NotificationService.isActive()) {
+                NotificationService.start(context);
+            }
         }
     }
 }

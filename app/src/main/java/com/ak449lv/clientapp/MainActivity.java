@@ -143,6 +143,11 @@ public class MainActivity extends Activity {
         }
 
         @android.webkit.JavascriptInterface
+        public void setSound(String name) {
+            NotificationService.applySound(MainActivity.this, name);
+        }
+
+        @android.webkit.JavascriptInterface
         public void stop() {
             NotificationService.stopService(MainActivity.this);
         }
