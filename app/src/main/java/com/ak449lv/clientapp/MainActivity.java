@@ -28,13 +28,17 @@ import android.widget.Toast;
 public class MainActivity extends Activity {
 
     private WebView web;
-    private String lastUrl = "https://449lv.com/app";
+    private String lastUrl = "https://449lv.com/menu-admin";
     private int renderRecoverCount = 0;
     private boolean pageFinished = false;
     private String lastErr = null;
     private LinearLayout overlay;
     private TextView ovTitle;
     private boolean overlayVisible = false;
+
+    private static boolean isAuthFlow(String u) {
+        return u != null && (u.contains("accounts.google.com") || u.contains("/auth/callback") || u.contains("/api/auth/google"));
+    }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -95,25 +99,30 @@ public class MainActivity extends Activity {
                 lastUrl = url;
                 renderRecoverCount = 0;
                 lastErr = null;
-                savePageState("تم تحميل الصفحة");
-                // تحقق من أن الصفحة تحتوي محتوى فعلي (ليست صفحة سوداء فارغة)
-                view.evaluateJavascript(
-                        "(document.body ? document.body.innerText.trim().length : 0).toString()",
-                        value -> runOnUiThread(() -> {
-                            try {
-                                String raw = value == null ? "0" : value.replace("\"", "");
-                                int len = Integer.parseInt(raw);
-                                if (len > 20) {
+                // أثناء تسجيل الدخول عبر Google: لا نغطي الصفحة بشاشة الإنقاذ أبداً
+                if (!isAuthFlow(url)) {
+                    savePageState("تم تحميل الصفحة");
+                    // تحقق من أن الصفحة تحتوي محتوى فعلي (ليست صفحة سوداء فارغة)
+                    view.evaluateJavascript(
+                            "(document.body ? document.body.innerText.trim().length : 0).toString()",
+                            value -> runOnUiThread(() -> {
+                                try {
+                                    String raw = value == null ? "0" : value.replace("\"", "");
+                                    int len = Integer.parseInt(raw);
+                                    if (len > 20) {
+                                        hideStall();
+                                    } else {
+                                        savePageState("صفحة فارغة (محتوى=" + len + ")");
+                                        showStall("الصفحة فارغة — قد تكون بحاجة إلى تسجيل دخول أو إعادة تحميل");
+                                    }
+                                } catch (Throwable t) {
                                     hideStall();
-                                } else {
-                                    savePageState("صفحة فارغة (محتوى=" + len + ")");
-                                    showStall("الصفحة فارغة — قد تكون بحاجة إلى تسجيل دخول أو إعادة تحميل");
                                 }
-                            } catch (Throwable t) {
-                                hideStall();
-                            }
-                        })
-                );
+                            })
+                    );
+                } else {
+                    hideStall();
+                }
             }
 
             @Override
@@ -152,31 +161,36 @@ public class MainActivity extends Activity {
         // جسر JavaScript → أندرويد: تتحكم أزرار الإشعارات في الموقع بالخدمة الأساسية داخل التطبيق
         web.addJavascriptInterface(new LvBridge(), "LvNative");
 
-        // شاشة الإنقاذ تظهر فوراً — تختفي فقط إذا تحمّلت الصفحة فعلاً
-        overlay.setVisibility(View.VISIBLE);
-        overlayVisible = true;
-        if (web != null) web.setVisibility(View.INVISIBLE);
-
         // مسح ذاكرة WebView المؤقتة مرة واحدة عند أول تشغيل لهذه النسخة
         SharedPreferences boot = getSharedPreferences("pushsrv", MODE_PRIVATE);
-        if (!boot.getBoolean("v2_8_boot_cleared", false)) {
+        if (!boot.getBoolean("v2_9_boot_cleared", false)) {
             try {
                 web.clearCache(true);
                 web.clearHistory();
             } catch (Throwable t) {
             }
-            boot.edit().putBoolean("v2_8_boot_cleared", true).apply();
+            boot.edit().putBoolean("v2_9_boot_cleared", true).apply();
         }
 
-        // معالجة رابط الإشعار: فتح رابط الدخول / لوحة التحكم عند الضغط
+        // معالجة رابط الإشعار: فتح لوحة المنيو مباشرة (أو الرابط القادم من الإشعار)
         String url = null;
         if (getIntent() != null) {
             url = getIntent().getStringExtra("url");
         }
         if (url == null || url.isEmpty() || !url.startsWith("https://449lv.com")) {
-            url = "https://449lv.com/app";
+            url = "https://449lv.com/menu-admin";
         }
         lastUrl = url;
+
+        // استعادة جلسة الدخول المحفوظة حتى لا يُطلب تسجيل الدخول كل مرة
+        try {
+            String saved = getSharedPreferences("pushsrv", MODE_PRIVATE).getString("cookie", null);
+            if (saved != null && !saved.isEmpty()) {
+                CookieManager.getInstance().setCookie("https://449lv.com", saved);
+            }
+        } catch (Throwable t) {
+        }
+
         web.loadUrl(url);
         startStallWatch();
 
@@ -210,7 +224,7 @@ public class MainActivity extends Activity {
 
     private void saveSessionCookie() {
         try {
-            String c = CookieManager.getInstance().getCookie("https://449lv.com/app");
+            String c = CookieManager.getInstance().getCookie("https://449lv.com");
             if (c != null && !c.isEmpty()) {
                 getSharedPreferences("pushsrv", MODE_PRIVATE).edit().putString("cookie", c).apply();
             }
@@ -334,14 +348,39 @@ public class MainActivity extends Activity {
     }
 
     private void startStallWatch() {
-        // تُعرض طبقة الإنقاذ إذا لم تُحمَّل الصفحة (شاشة سوداء غالباً بسبب انهيار مُصيّر WebView)
-        for (int delaySec : new int[]{8, 14}) {
-            web.postDelayed(() -> {
-                if (!pageFinished && !overlayVisible && overlay != null) {
-                    showStall("الصفحة لم تظهر بعد… جارٍ المحاولة");
+        // لا تُغطى صفحة تسجيل الدخول عبر Google أبداً (قد يحتاج المستخدم وقتاً لكتابة بريده)
+        stallChecks(1, 8000);
+    }
+
+    private void stallChecks(final int i, final long delay) {
+        if (i > 4) return;
+        web.postDelayed(() -> {
+            if (pageFinished) return;
+            String cur = null;
+            try {
+                cur = web.getUrl();
+            } catch (Throwable t) {
+            }
+            if (isAuthFlow(cur)) {
+                // ننتظر انتهاء المستخدم من تسجيل الدخول ثم نعود للفحص
+                stallChecks(i + 1, 20000);
+                return;
+            }
+            if (!overlayVisible) {
+                showStall(i == 1 ? "جارٍ تحميل اللوحة…" : "الصفحة لم تظهر بعد — استخدم الأزرار بالأسفل");
+            }
+            if (i == 2) {
+                // محاولة واحدة لإعادة التحميل لإنعاش المُصيّر إذا تجمّد
+                try {
+                    if (web != null) web.reload();
+                } catch (Throwable t) {
                 }
-            }, delaySec * 1000L);
-        }
+            }
+            if (i >= 3) {
+                ovTitle.setText("تعذر تحميل اللوحة — تأكد من الإنترنت أو جرّب إعادة التعيين");
+            }
+            stallChecks(i + 1, i >= 2 ? 25000 : 10000);
+        }, delay);
     }
 
     private void buildOverlay() {
@@ -439,15 +478,16 @@ public class MainActivity extends Activity {
     private void resetApp() {
         new AlertDialog.Builder(this)
                 .setTitle("إعادة تعيين التطبيق")
-                .setMessage("سيتم مسح جميع بيانات المتصفح الداخلي والكاش ثم إعادة تحميل الموقع من جديد. لن يُمسح شيء من حسابك على الموقع.")
+                .setMessage("سيتم مسح بيانات المتصفح الداخلي والكاش والدخول، ثم نفتح لوحة المنيو لتسجيل الدخول من جديد عبر Google.")
                 .setPositiveButton("نعم، أعد التعيين", (di, w) -> {
                     try {
                         web.clearCache(true);
                         web.clearHistory();
                         web.clearFormData();
                         CookieManager.getInstance().removeAllCookies(null);
-                        web.loadUrl("https://449lv.com/app");
-                        lastUrl = "https://449lv.com/app";
+                        CookieManager.getInstance().removeAllSessionCookies(null);
+                        web.loadUrl("https://449lv.com/menu-admin");
+                        lastUrl = "https://449lv.com/menu-admin";
                         overlayVisible = false;
                         overlay.setVisibility(View.GONE);
                         if (web != null) web.setVisibility(View.VISIBLE);

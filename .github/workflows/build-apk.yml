@@ -75,21 +75,22 @@ jobs:
       - name: Prepare release files
         run: |
           mkdir -p dist
-          cp app/build/outputs/apk/release/app-release.apk dist/449lv-v2.8.apk
+          cp app/build/outputs/apk/release/app-release.apk dist/449lv-v2.9.apk
           cp app/build/outputs/apk/release/app-release.apk dist/449lv-latest.apk
 
-      - name: Publish GitHub Release (v2.8)
+      - name: Publish GitHub Release (v2.9)
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v2.8
-          name: 449LV v2.8
+          tag_name: v2.9
+          name: 449LV v2.9
           body: |
-            إصدار 449LV v2.8 — شاشة إنقاذ أصلية عند ت⿊ق الشاشة
+            إصدار 449LV v2.9 — يدخلك مباشرة للوحة المنيو
 
-            • إذا لم تُحمَّل الصفحة بعد 8 ثوانٍ (الشاشة سوداء فارغة)، تظهر طبقة إنقاذ أصلية بأزرار: إعادة التحميل / فتح في المتصفح / تشخيص الإشعارات (مع نسخ النص)
-            • تسجيل حالة الصفحة وموقع الخطأ تلقائياً في괜îح التشخيص الأصلي حتى لو كانت الصفحة معطّلة
+            • عند فتح التطبيق تظهر لوحة المنيو الخاصة بك مباشرة (بدل صفحة الهبوط)
+            • إن لم تكن مسجلاً: تنتقل تلقائياً وداخل التطبيق لتسجيل الدخول بحساب Google ثم تعود للوحة — تُحفظ الجلسة ولا تُطلب مجدداً
+            • التسجيل والخروج والجلسة تتم كلها داخل التطبيق دون الحاجة للمتصفح
           files: |
-            dist/449lv-v2.8.apk
+            dist/449lv-v2.9.apk
             dist/449lv-latest.apk
           overwrite: true
           fail_on_unmatched_files: true
