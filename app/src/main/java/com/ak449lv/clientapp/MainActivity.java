@@ -38,6 +38,7 @@ public class MainActivity extends Activity {
     private android.widget.ProgressBar ovSpinner;
     private LinearLayout ovBtns;
     private boolean serviceInitiated = false;
+    private boolean sessionRestored = false;
 
     private static boolean isAuthFlow(String u) {
         return u != null && (u.contains("accounts.google.com") || u.contains("/auth/callback") || u.contains("/api/auth/google"));
@@ -93,27 +94,26 @@ public class MainActivity extends Activity {
             public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
                 pageFinished = false;
                 lastErr = null;
-                // صفحة تسجيل الدخول عبر Google: نخفي شاشة التحميل حتى يرى المستخدم صفحة الدخول
-                if (isAuthFlow(url)) {
-                    hideSplash();
-                } else {
-                    setSplashLoading();
-                }
+                // WebView يبقى مرئياً دائماً (لا إخفاء، لا طبقات تعلّق) كما في v2.5
             }
 
             @Override
             public void onPageFinished(WebView view, String url) {
                 pageFinished = true;
+                boolean authNow = isAuthFlow(url);
+                boolean crossed = !authNow && isAuthFlow(lastUrl);
                 saveSessionCookie();
                 lastUrl = url;
                 renderRecoverCount = 0;
                 lastErr = null;
-                // أثناء تسجيل الدخول عبر Google: لا نغطي الصفحة بشاشة التحميل أبداً
-                if (!isAuthFlow(url)) {
+                // أثناء تسجيل الدخول عبر Google: لا نغطي الصفحة بأي شيء
+                if (!authNow) {
                     savePageState("تم تحميل الصفحة");
-                    // عند أول وصول للوحة (داخل التطبيق وليس صفحات تسجيل الدخول):
-                    // طلب إذن الإشعارات + تشغيل الخدمة الخلفية تلقائياً
-                    afterDashboardLoaded();
+                    // إذن الإشعارات + الخدمة تُفعَّلان عند أول دخول فعلي للوحة فقط:
+                    // بعد اكتمال تسجيل الدخول عبر Google، أو عند فتح بجلسة محفوظة
+                    if (crossed || sessionRestored) {
+                        afterDashboardLoaded();
+                    }
                     // تحقق من أن الصفحة تحتوي محتوى فعلي (ليست صفحة سوداء فارغة)
                     view.evaluateJavascript(
                             "(document.body ? document.body.innerText.trim().length : 0).toString()",
@@ -174,17 +174,6 @@ public class MainActivity extends Activity {
         // جسر JavaScript → أندرويد: تتحكم أزرار الإشعارات في الموقع بالخدمة الأساسية داخل التطبيق
         web.addJavascriptInterface(new LvBridge(), "LvNative");
 
-        // مسح ذاكرة WebView المؤقتة مرة واحدة عند أول تشغيل لهذه النسخة
-        SharedPreferences boot = getSharedPreferences("pushsrv", MODE_PRIVATE);
-        if (!boot.getBoolean("v2_9_boot_cleared", false)) {
-            try {
-                web.clearCache(true);
-                web.clearHistory();
-            } catch (Throwable t) {
-            }
-            boot.edit().putBoolean("v2_9_boot_cleared", true).apply();
-        }
-
         // معالجة رابط الإشعار: فتح لوحة المنيو مباشرة (أو الرابط القادم من الإشعار)
         String url = null;
         if (getIntent() != null) {
@@ -200,15 +189,14 @@ public class MainActivity extends Activity {
             String saved = getSharedPreferences("pushsrv", MODE_PRIVATE).getString("cookie", null);
             if (saved != null && !saved.isEmpty()) {
                 CookieManager.getInstance().setCookie("https://449lv.com", saved);
+                sessionRestored = true;
             }
         } catch (Throwable t) {
         }
 
         web.loadUrl(url);
         startStallWatch();
-
-        // شاشة التحميل تُغطي صفحات الموقع حتى تظهر اللوحة فعلاً
-        setSplashLoading();
+        // بدون أي تغطية: WebView يبقى ظاهراً دائماً كما كان في v2.5 الذي يعمل
     }
 
     // تُستدعى فقط عند أول وصول فعلي للوحة المنيو (وليس أثناء تسجيل الدخول عبر Google):
@@ -386,18 +374,17 @@ public class MainActivity extends Activity {
                 stallChecks(i + 1, 20000);
                 return;
             }
-if (!overlayVisible) {
-                    setSplashLoading();
+if (!pageFinished) {
+                // لا نغطي WebView أثناء التحميل العادي إطلاقاً — نجرب إعادة تحميل صامتة واحدة
+                if (i == 2) {
+                    try {
+                        if (web != null) web.reload();
+                    } catch (Throwable t) {
+                    }
                 }
-            if (i == 2) {
-                // محاولة واحدة لإعادة التحميل لإنعاش المُصيّر إذا تجمّد
-                try {
-                    if (web != null) web.reload();
-                } catch (Throwable t) {
+                if (i >= 3) {
+                    setSplashError("تعذر تحميل اللوحة — تأكد من الإنترنت أو جرّب إعادة التعيين");
                 }
-            }
-            if (i >= 3) {
-                setSplashError("تعذر تحميل اللوحة — تأكد من الإنترنت أو جرّب إعادة التعيين");
             }
             stallChecks(i + 1, i >= 2 ? 25000 : 10000);
         }, delay);
@@ -483,7 +470,6 @@ if (!overlayVisible) {
             if (!overlayVisible) {
                 overlayVisible = true;
                 overlay.setVisibility(View.VISIBLE);
-                if (web != null) web.setVisibility(View.INVISIBLE);
             }
             if (ovSpinner != null) ovSpinner.setVisibility(View.VISIBLE);
             if (ovBtns != null) ovBtns.setVisibility(View.GONE);
@@ -499,7 +485,6 @@ if (!overlayVisible) {
         runOnUiThread(() -> {
             overlayVisible = true;
             overlay.setVisibility(View.VISIBLE);
-            if (web != null) web.setVisibility(View.INVISIBLE);
             if (ovSpinner != null) ovSpinner.setVisibility(View.GONE);
             if (ovBtns != null) ovBtns.setVisibility(View.VISIBLE);
             if (ovTitle != null) {
@@ -515,7 +500,6 @@ if (!overlayVisible) {
         runOnUiThread(() -> {
             overlayVisible = false;
             overlay.setVisibility(View.GONE);
-            if (web != null) web.setVisibility(View.VISIBLE);
         });
     }
 
