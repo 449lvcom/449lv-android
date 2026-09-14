@@ -57,6 +57,7 @@ public class NotificationService extends Service {
     private int retryFg = 0;
     private int badAuth = 0;
     private static String sChannelSound = null;
+    private static String sOrdersCh = CH_ORDERS;
     private HashSet<String> seen = new HashSet<>();
 
     public static boolean start(Context c) {
@@ -142,7 +143,7 @@ public class NotificationService extends Service {
             String text = "إشعارات الطلبات تعمل بشكل صحيح على هذا الجهاز ✓";
             Notification.Builder b;
             if (Build.VERSION.SDK_INT >= 26) {
-                b = new Notification.Builder(ctx, CH_ORDERS);
+                b = new Notification.Builder(ctx, ordersCh());
             } else {
                 b = new Notification.Builder(ctx);
             }
@@ -162,6 +163,10 @@ public class NotificationService extends Service {
         }
     }
 
+    private static String ordersCh() {
+        return sOrdersCh;
+    }
+
     public static void applySound(Context ctx, String name) {
         if (Build.VERSION.SDK_INT < 26) return;
         try {
@@ -171,13 +176,26 @@ public class NotificationService extends Service {
             if (n.equals(sChannelSound)) return;
             NotificationManager nm = (NotificationManager) ctx.getSystemService(NOTIFICATION_SERVICE);
             if (nm == null) return;
-            NotificationChannel ch = nm.getNotificationChannel(CH_ORDERS);
-            if (ch == null) {
-                ensureChannels(ctx);
-                ch = nm.getNotificationChannel(CH_ORDERS);
-            }
-            if (ch == null) return;
             Uri u = soundUri(ctx, n);
+            String newId = CH_ORDERS + "_" + n;
+            if (!newId.equals(sOrdersCh)) {
+                try {
+                    NotificationChannel oldCh = nm.getNotificationChannel(sOrdersCh);
+                    if (oldCh != null) nm.deleteNotificationChannel(sOrdersCh);
+                } catch (Throwable t) {
+                }
+                try {
+                    NotificationChannel baseCh = nm.getNotificationChannel(CH_ORDERS);
+                    if (baseCh != null) nm.deleteNotificationChannel(CH_ORDERS);
+                } catch (Throwable t) {
+                }
+                sOrdersCh = newId;
+            }
+            NotificationChannel ch = new NotificationChannel(newId, "طلبات جديدة", NotificationManager.IMPORTANCE_HIGH);
+            ch.setShowBadge(true);
+            ch.enableLights(true);
+            ch.enableVibration(true);
+            ch.setVibrationPattern(new long[]{0, 250, 180, 250});
             if ("silent".equals(n)) {
                 ch.setSound(null, null);
             } else {
@@ -343,7 +361,7 @@ public class NotificationService extends Service {
         if (Build.VERSION.SDK_INT < 26) return;
         NotificationManager nm = (NotificationManager) ctx.getSystemService(NOTIFICATION_SERVICE);
         if (nm == null) return;
-        if (nm.getNotificationChannel(CH_ORDERS) == null) {
+        if (sOrdersCh.equals(CH_ORDERS) && nm.getNotificationChannel(CH_ORDERS) == null) {
             NotificationChannel ch = new NotificationChannel(CH_ORDERS, "طلبات جديدة", NotificationManager.IMPORTANCE_HIGH);
             ch.setShowBadge(true);
             ch.enableLights(true);
@@ -599,7 +617,7 @@ public class NotificationService extends Service {
         if (nm == null) return;
 
         if (Build.VERSION.SDK_INT >= 26) {
-            Notification.Builder b = new Notification.Builder(this, CH_ORDERS)
+            Notification.Builder b = new Notification.Builder(this, ordersCh())
                     .setSmallIcon(R.mipmap.ic_launcher)
                     .setContentTitle(title)
                     .setContentText(text.toString())

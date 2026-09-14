@@ -75,23 +75,25 @@ jobs:
       - name: Prepare release files
         run: |
           mkdir -p dist
-          cp app/build/outputs/apk/release/app-release.apk dist/449lv-v2.5r2.apk
+          cp app/build/outputs/apk/release/app-release.apk dist/449lv-v2.5r3.apk
           cp app/build/outputs/apk/release/app-release.apk dist/449lv-latest.apk
 
-      - name: Publish GitHub Release (v2.5-r2)
+      - name: Publish GitHub Release (v2.5-r3)
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v2.5-r2
-          name: 449LV v2.5-r2
+          tag_name: v2.5-r3
+          name: 449LV v2.5-r3
           body: |
-            إصدار 449LV v2.5-r2 — v2.5 بالضبط + إشعارات الطلبات تعمل فعلاً
+            إصدار 449LV v2.5-r3 — v2.5 بالضبط + إصلاح انتشار صوت النغمة في كل الأجهزة
 
             • نفس طريقة فتح v2.5 التي تعمل على جهازك بلا أي شاشة فارغة
             • إصلاح crash الصامت الذي كان يُغلق التطبيق فور فتحه عند تشغيل خدمة الإشعارات
               (كان السبب الجذري لكل الشاشات الفارغة في الإصدارات السابقة)
             • الإشعارات تعمل الآن: عند ظهور طلب جديد يصلك إشعار بنفس نغمة وقناة الإشعار التجريبي
+            • ★ إصلاح خاص: كل نغمة (جرس، ألحان، تنبيه، طنين، هتاف) تُنشئ قناة مستقلة
+              → تفعل الرنين فوراً على كل الأجهزة (بما فيها الأجهزة التي تتجاهل تحديث صوت القناة)
           files: |
-            dist/449lv-v2.5r2.apk
+            dist/449lv-v2.5r3.apk
             dist/449lv-latest.apk
           overwrite: true
           fail_on_unmatched_files: true
@@ -103,7 +105,7 @@ jobs:
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
 
-      - name: Upload release APK (signed - لترقية مباشرة)
+      - name: Upload release APK (signed - للترقية المباشرة)
         uses: actions/upload-artifact@v4
         with:
           name: 449lv-apk-release
