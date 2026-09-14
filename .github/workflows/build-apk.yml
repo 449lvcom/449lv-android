@@ -27,7 +27,14 @@ jobs:
           cache-disabled: false
 
       - name: Build APKs (debug + release signed)
-        run: gradle assembleDebug assembleRelease
+        run: |
+          set +e
+          gradle assembleDebug assembleRelease --stacktrace > /tmp/g.log 2>&1
+          RC=$?
+          if [ $RC -ne 0 ]; then
+            echo "::error title=BUILD-ERROR::$(tail -c 2200 /tmp/g.log | tr '\n' ' ')"
+            exit $RC
+          fi
 
       - name: Inspect & verify APK permissions (aapt)
         run: |
