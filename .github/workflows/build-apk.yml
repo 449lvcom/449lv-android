@@ -27,6 +27,35 @@ jobs:
       - name: Build APKs (debug + release signed)
         run: gradle assembleDebug assembleRelease
 
+      - name: Inspect & verify APK permissions (aapt)
+        run: |
+          set -e
+          APK=app/build/outputs/apk/release/app-release.apk
+          AAPT=$(ls "$ANDROID_HOME"/build-tools/*/aapt 2>/dev/null | sort -V | tail -1)
+          if [ -z "$AAPT" ]; then echo "ERROR aapt not found"; exit 1; fi
+          echo "aapt=$AAPT"
+          OUT=apk-report.txt
+          {
+            echo "=== aapt dump permissions (release) ==="
+            "$AAPT" dump permissions "$APK"
+            echo ""
+            echo "=== badging ==="
+            "$AAPT" dump badging "$APK" | grep -E "^package:|uses-permission|targetSdkVersion|versionCode:" | head -40
+            echo ""
+            echo "=== SHA256 ==="
+            sha256sum "$APK"
+          } | tee "$OUT"
+          for P in android.permission.INTERNET android.permission.ACCESS_NETWORK_STATE android.permission.POST_NOTIFICATIONS android.permission.FOREGROUND_SERVICE android.permission.FOREGROUND_SERVICE_SPECIAL_USE android.permission.WAKE_LOCK android.permission.VIBRATE android.permission.RECEIVE_BOOT_COMPLETED; do
+            if grep -q "$P" "$OUT"; then echo "OK    $P"; else echo "MISSING $P"; exit 1; fi
+          done
+
+      - name: Upload APK verification report
+        uses: actions/upload-artifact@v4
+        with:
+          name: 449lv-apk-report
+          path: apk-report.txt
+          if-no-files-found: error
+
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:

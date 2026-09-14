@@ -9,6 +9,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.provider.Settings;
 import android.webkit.CookieManager;
+import android.webkit.PermissionRequest;
 import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
@@ -46,7 +47,23 @@ public class MainActivity extends Activity {
                 saveSessionCookie();
             }
         });
-        web.setWebChromeClient(new WebChromeClient());
+        web.setWebChromeClient(new WebChromeClient() {
+            @Override
+            public void onPermissionRequest(PermissionRequest request) {
+                // منح أذونات الويب (الإشعارات وغيرها) تلقائياً لموقع التطبيق فقط
+                if (Build.VERSION.SDK_INT >= 21) {
+                    try {
+                        if (request.getOrigin() != null
+                                && request.getOrigin().toString().startsWith("https://449lv.com")) {
+                            request.grant(request.getResources());
+                            return;
+                        }
+                    } catch (Throwable t) {
+                    }
+                    request.deny();
+                }
+            }
+        });
 
         // جسر JavaScript → أندرويد: تتحكم أزرار الإشعارات في الموقع بالخدمة الأساسية داخل التطبيق
         web.addJavascriptInterface(new LvBridge(), "LvNative");
@@ -134,7 +151,7 @@ public class MainActivity extends Activity {
     @Override
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-        if (requestCode == 100) {
+        if (requestCode == 101) {
             boolean granted = grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED;
             if (granted) {
                 Toast.makeText(this, "تم السماح بالإشعارات", Toast.LENGTH_LONG).show();
@@ -215,10 +232,10 @@ public class MainActivity extends Activity {
             } else if (!askedBefore) {
                 // أول فتح → طلب فوري وظاهر
                 p.edit().putBoolean("notif_permission_asked", true).apply();
-                requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS}, 100);
+                requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS}, 101);
             } else if (shouldShowRequestPermissionRationale(android.Manifest.permission.POST_NOTIFICATIONS)) {
                 // رفض عادي سابق (غير نهائي) → نعيد الطلب
-                requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS}, 100);
+                requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS}, 101);
             } else {
                 // رفض نهائي → الإعدادات مباشرة
                 Toast.makeText(this, "الرجاء تفعيل الإشعارات من إعدادات التطبيق", Toast.LENGTH_LONG).show();
