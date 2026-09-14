@@ -148,6 +148,20 @@ public class MainActivity extends Activity {
         }
 
         @android.webkit.JavascriptInterface
+        public String getDiag() {
+            try {
+                SharedPreferences p = getSharedPreferences("pushsrv", MODE_PRIVATE);
+                long ts = p.getLong("diag_ts", 0);
+                String d = p.getString("diag", "لا يوجد تشخيص بعد — انتظر دقيقة");
+                long age = ts == 0 ? -1 : (System.currentTimeMillis() - ts) / 1000;
+                String ago = age < 0 ? "لم يحدث بعد" : (age < 120 ? "قبل " + age + " ثانية" : "قبل " + (age / 60) + " دقيقة");
+                return "آخر فحص: " + ago + "\n" + d;
+            } catch (Throwable t) {
+                return "getDiag error";
+            }
+        }
+
+        @android.webkit.JavascriptInterface
         public void stop() {
             NotificationService.stopService(MainActivity.this);
         }

@@ -44,6 +44,8 @@ public class NotificationService extends Service {
     private static final int RESTART_ALARM_REQ = 77;
     private static final String TAG = "NotificationService";
     private static final String KEY_COOKIE = "cookie";
+    private static final String KEY_DIAG = "diag";
+    private static final String KEY_DIAG_TS = "diag_ts";
 
     private static volatile boolean sRunning = false;
 
@@ -427,6 +429,7 @@ public class NotificationService extends Service {
 
     private void doPoll() {
         String cookie = null;
+        boolean fromPrefs = false;
         try {
             cookie = CookieManager.getInstance().getCookie(BASE + "/app");
         } catch (Throwable t) {
@@ -436,10 +439,16 @@ public class NotificationService extends Service {
             // لا يكون مخزن الكوكيز مهيّأ — نعتمد على الكوكي المحفوظ من آخر فتح للتطبيق
             try {
                 cookie = getSharedPreferences(PREFS, MODE_PRIVATE).getString(KEY_COOKIE, null);
+                fromPrefs = !(cookie == null || cookie.isEmpty());
             } catch (Throwable t) {
             }
         }
-        if (cookie == null || cookie.isEmpty()) return; // لا جلسة بعد — أعد المحاولة لاحقاً
+        if (cookie == null || cookie.isEmpty()) {
+            // لا جلسة بعد: لا نتوقف بصمت — نسجّل وننبّه أن التطبيق يحتاج فتحه وتسجيل الدخول
+            setDiag("no-cookie orders=0");
+            handleAuthSkip();
+            return;
+        }
 
         HttpURLConnection c = null;
         try {
@@ -452,6 +461,7 @@ public class NotificationService extends Service {
             c.setRequestMethod("GET");
             int code = c.getResponseCode();
             if (code != 200) {
+                setDiag("code=" + code + " orders=0 cookie=" + cookie.length() + " prefs=" + fromPrefs);
                 handleAuthSkip();
                 return;
             }
@@ -469,7 +479,10 @@ public class NotificationService extends Service {
             while ((line = r.readLine()) != null) sb.append(line);
             JSONObject j = new JSONObject(sb.toString());
             JSONArray arr = j.optJSONArray("orders");
-            if (arr == null) return;
+            if (arr == null) {
+                setDiag("code=200 orders=null");
+                return;
+            }
 
             // تحديث نغمة الإشعارات حسب إعدادات المنيو (تُطبَّق على قناة الطلبات)
             if (arr.length() > 0) {
@@ -488,14 +501,11 @@ public class NotificationService extends Service {
                 String key = "o" + id;
                 if (id > 0 && !seen.contains(key)) newIds.add(key);
             }
+            setDiag("code=200 orders=" + arr.length() + " new=" + newIds.size() + " seen=" + seen.size() + " cookie=" + cookie.length());
             if (newIds.isEmpty()) return;
 
-            boolean firstRun = seen.isEmpty();
             for (String k : newIds) seen.add(k);
             persistSeen();
-
-            // أول تشغيل: نأخذ خط الأساس فقط (لا ننبّه على الطلبات القديمة السابقة للتسجيل)
-            if (firstRun) return;
 
             String openUrl = BASE + page + (ven > 0 ? "?v=" + ven : "");
             for (int i = 0; i < arr.length(); i++) {
@@ -507,8 +517,21 @@ public class NotificationService extends Service {
                 showOrderNotification(o, id, openUrl);
             }
         } catch (Throwable t) {
+            String msg = t.getMessage();
+            if (msg != null && msg.length() > 140) msg = msg.substring(0, 140);
+            setDiag("err: " + (msg == null ? t.getClass().getSimpleName() : msg));
         } finally {
             if (c != null) c.disconnect();
+        }
+    }
+
+    private void setDiag(String s) {
+        try {
+            getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                    .putString(KEY_DIAG, s)
+                    .putLong(KEY_DIAG_TS, System.currentTimeMillis())
+                    .apply();
+        } catch (Throwable t) {
         }
     }
 

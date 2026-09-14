@@ -61,24 +61,23 @@ jobs:
       - name: Prepare release files
         run: |
           mkdir -p dist
-          cp app/build/outputs/apk/release/app-release.apk dist/449lv-v2.4.apk
+          cp app/build/outputs/apk/release/app-release.apk dist/449lv-v2.5.apk
           cp app/build/outputs/apk/release/app-release.apk dist/449lv-latest.apk
 
-      - name: Publish GitHub Release (v2.4)
+      - name: Publish GitHub Release (v2.5)
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v2.4
-          name: 449LV v2.4
+          tag_name: v2.5
+          name: 449LV v2.5
           body: |
-            إصدار 449LV v2.4
+            إصدار 449LV v2.5 — تشخيص الإشعارات
 
-            • نغمات إشعارات قابلة للتحكم من لوحة التحكم (جرس، جرس هادئ، دينغ، تنبيه، فانفار، صامت) تُشغَّل داخل تطبيق أندرويد
-            • منبّه دوري يعيد تشغيل خدمة الإشعارات تلقائياً إن أوقفتها قيود النظام (OEM)
-            • تنبيه "الجلسة انتهت" إذا انتهت صلاحية تسجيل الدخول بدلاً من توقف الإشعارات بصمت
-            • مدة جلسة تسجيل الدخول ممتدة لـ 30 يوماً + تحديث الكوكي تلقائياً في الخلفية
-            • (إصدار 2.3: إصلاح جذرية للأذونات + أزرار إشعارات أصلية + إصلاح تشفير Web Push)
+            • زر «🔍 حالة الإشعارات» داخل تطبيق أندرويد يعرض آخر نتيجة فحص (عدد الطلبات الجديدة، رمز الاستجابة، حالة الجلسة) فوراً
+            • لا يُبتلع أول طلب قيد الانتظار عند تفعيل الإشعارات لأول مرة — يُنبَّه عليه فوراً
+            • إذا انتهت الجلسة أو لم يسجّل الدخول: إشعار واضح بدل التوقف الصامت
+            • نغمات إشعارات قابلة للتحكم + منبّه إعادة تشغيل تلقائي (من إصدار 2.4)
           files: |
-            dist/449lv-v2.4.apk
+            dist/449lv-v2.5.apk
             dist/449lv-latest.apk
           overwrite: true
           fail_on_unmatched_files: true
