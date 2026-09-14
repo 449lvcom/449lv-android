@@ -49,7 +49,7 @@ public class NotificationService extends Service {
 
     private static volatile boolean sRunning = false;
 
-    private final Handler handler = new Handler(getMainLooper());
+    private Handler handler;
     private final Object pollLock = new Object();
     private boolean pollInFlight = false;
     private boolean running = false;
@@ -288,6 +288,7 @@ public class NotificationService extends Service {
             fgOk = false;
             retryFg = 0;
         }
+        if (handler == null) handler = new Handler(getMainLooper());
         ensureChannels();
         startAsForeground();
         if (!running) {
@@ -311,6 +312,7 @@ public class NotificationService extends Service {
             if (!running) {
                 running = true;
                 sRunning = true;
+                if (handler == null) handler = new Handler(getMainLooper());
                 handler.post(poller);
             }
         } catch (Throwable t) {
@@ -323,7 +325,7 @@ public class NotificationService extends Service {
     public void onDestroy() {
         running = false;
         sRunning = false;
-        handler.removeCallbacksAndMessages(null);
+        if (handler != null) handler.removeCallbacksAndMessages(null);
         cancelRestartAlarm();
         super.onDestroy();
     }
@@ -406,9 +408,11 @@ public class NotificationService extends Service {
             fgOk = false;
             if (retryFg < 30) {
                 retryFg++;
-                handler.postDelayed(() -> {
-                    if (running) startAsForeground();
-                }, 5000L);
+                if (handler != null) {
+                    handler.postDelayed(() -> {
+                        if (running) startAsForeground();
+                    }, 5000L);
+                }
             }
         }
     }

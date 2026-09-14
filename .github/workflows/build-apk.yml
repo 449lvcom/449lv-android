@@ -75,23 +75,23 @@ jobs:
       - name: Prepare release files
         run: |
           mkdir -p dist
-          cp app/build/outputs/apk/release/app-release.apk dist/449lv-v2.5r1.apk
+          cp app/build/outputs/apk/release/app-release.apk dist/449lv-v2.5r2.apk
           cp app/build/outputs/apk/release/app-release.apk dist/449lv-latest.apk
 
-      - name: Publish GitHub Release (v2.5-r1)
+      - name: Publish GitHub Release (v2.5-r2)
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v2.5-r1
-          name: 449LV v2.5-r1
+          tag_name: v2.5-r2
+          name: 449LV v2.5-r2
           body: |
-            إصدار 449LV v2.5-r1 — العودة إلى النسخة التي كانت تعمل لديك
+            إصدار 449LV v2.5-r2 — v2.5 بالضبط + إشعارات الطلبات تعمل فعلاً
 
-            • عاد التطبيق إلى شفرة الإصدار 2.5 بالضبط في طريقة الفتح (ما كان يعمل على جهازك)
-            • يفتح صفحة الدخول داخل التطبيق مباشرة بلا أي شاشة سوداء
-            • مع تحسين واحد فقط وراء الكواليس: فحص الإشعارات يعمل على مؤشر خلفية
-              (إصلاح الإصدار 2.6) لتصلك إشعارات الطلبات القادمة الجديدة
+            • نفس طريقة فتح v2.5 التي تعمل على جهازك بلا أي شاشة فارغة
+            • إصلاح crash الصامت الذي كان يُغلق التطبيق فور فتحه عند تشغيل خدمة الإشعارات
+              (كان السبب الجذري لكل الشاشات الفارغة في الإصدارات السابقة)
+            • الإشعارات تعمل الآن: عند ظهور طلب جديد يصلك إشعار بنفس نغمة وقناة الإشعار التجريبي
           files: |
-            dist/449lv-v2.5r1.apk
+            dist/449lv-v2.5r2.apk
             dist/449lv-latest.apk
           overwrite: true
           fail_on_unmatched_files: true
