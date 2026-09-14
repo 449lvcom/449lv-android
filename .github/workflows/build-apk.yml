@@ -32,7 +32,14 @@ jobs:
           gradle assembleDebug assembleRelease --stacktrace > /tmp/g.log 2>&1
           RC=$?
           if [ $RC -ne 0 ]; then
-            echo "::error title=BUILD-ERROR::$(tail -c 2200 /tmp/g.log | tr '\n' ' ')"
+            LINE=$(grep -n "error:" /tmp/g.log | head -1 | cut -d: -f1)
+            if [ -n "$LINE" ] && [ "$LINE" != "0" ]; then
+              ERR=$(sed -n "$((LINE-8)),$((LINE+24))p" /tmp/g.log | tr '\n' ' ')
+            else
+              grep -n -E "error:|e: |FAILED|Execution failed" /tmp/g.log | tail -20 | tr '\n' ' ' > /tmp/er.txt
+              ERR="no error: match -> $(cat /tmp/er.txt) | tail: $(tail -c 600 /tmp/g.log | tr '\n' ' ')"
+            fi
+            echo "::error title=BUILD-ERROR::$ERR"
             exit $RC
           fi
 
