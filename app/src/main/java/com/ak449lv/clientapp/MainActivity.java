@@ -35,6 +35,9 @@ public class MainActivity extends Activity {
     private LinearLayout overlay;
     private TextView ovTitle;
     private boolean overlayVisible = false;
+    private android.widget.ProgressBar ovSpinner;
+    private LinearLayout ovBtns;
+    private boolean serviceInitiated = false;
 
     private static boolean isAuthFlow(String u) {
         return u != null && (u.contains("accounts.google.com") || u.contains("/auth/callback") || u.contains("/api/auth/google"));
@@ -90,6 +93,12 @@ public class MainActivity extends Activity {
             public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
                 pageFinished = false;
                 lastErr = null;
+                // صفحة تسجيل الدخول عبر Google: نخفي شاشة التحميل حتى يرى المستخدم صفحة الدخول
+                if (isAuthFlow(url)) {
+                    hideSplash();
+                } else {
+                    setSplashLoading();
+                }
             }
 
             @Override
@@ -99,9 +108,12 @@ public class MainActivity extends Activity {
                 lastUrl = url;
                 renderRecoverCount = 0;
                 lastErr = null;
-                // أثناء تسجيل الدخول عبر Google: لا نغطي الصفحة بشاشة الإنقاذ أبداً
+                // أثناء تسجيل الدخول عبر Google: لا نغطي الصفحة بشاشة التحميل أبداً
                 if (!isAuthFlow(url)) {
                     savePageState("تم تحميل الصفحة");
+                    // عند أول وصول للوحة (داخل التطبيق وليس صفحات تسجيل الدخول):
+                    // طلب إذن الإشعارات + تشغيل الخدمة الخلفية تلقائياً
+                    afterDashboardLoaded();
                     // تحقق من أن الصفحة تحتوي محتوى فعلي (ليست صفحة سوداء فارغة)
                     view.evaluateJavascript(
                             "(document.body ? document.body.innerText.trim().length : 0).toString()",
@@ -110,18 +122,18 @@ public class MainActivity extends Activity {
                                     String raw = value == null ? "0" : value.replace("\"", "");
                                     int len = Integer.parseInt(raw);
                                     if (len > 20) {
-                                        hideStall();
+                                        hideSplash();
                                     } else {
                                         savePageState("صفحة فارغة (محتوى=" + len + ")");
-                                        showStall("الصفحة فارغة — قد تكون بحاجة إلى تسجيل دخول أو إعادة تحميل");
+                                        setSplashError("الصفحة فارغة — قد تكون بحاجة إلى تسجيل دخول أو إعادة تحميل");
                                     }
                                 } catch (Throwable t) {
-                                    hideStall();
+                                    hideSplash();
                                 }
                             })
                     );
                 } else {
-                    hideStall();
+                    hideSplash();
                 }
             }
 
@@ -135,8 +147,9 @@ public class MainActivity extends Activity {
                         err = String.valueOf(error.getDescription());
                     }
                     lastErr = err;
-                    savePageState("خطأ تحميل: " + err);
-                    showStall("تعذر تحميل الصفحة\n" + err);
+                    if (!isAuthFlow(String.valueOf(request.getUrl()))) {
+                        setSplashError("تعذر تحميل اللوحة\n" + err);
+                    }
                 }
             }
         });
@@ -194,28 +207,35 @@ public class MainActivity extends Activity {
         web.loadUrl(url);
         startStallWatch();
 
-        // طلب الأذونات بعد اكتمال بناء الواجهة (بعض الأجهزة تتأثر عند البناء المتزامن مع WebView)
-        web.postDelayed(() -> ensurePermissions(), 800);
+        // شاشة التحميل تُغطي صفحات الموقع حتى تظهر اللوحة فعلاً
+        setSplashLoading();
     }
 
-    private void ensurePermissions() {
+    // تُستدعى فقط عند أول وصول فعلي للوحة المنيو (وليس أثناء تسجيل الدخول عبر Google):
+    // طلب إذن الإشعارات + استثناء البطارية + تشغيل خدمة الفحص في الخلفية
+    private void afterDashboardLoaded() {
+        if (serviceInitiated) return;
+        serviceInitiated = true;
         try {
             requestNotificationPermission();
         } catch (Throwable t) {
         }
-        // استثناء البطارية يُطلب بعد حل إذن الإشعارات (لا نُشبّك حوارين فوق بعضهما)
         if (Build.VERSION.SDK_INT < 33) {
             ensureBatteryOptExempt();
         }
         try {
-            boolean ok = NotificationService.start(this);
-            showStatusToast(ok);
-            if (ok) {
-                Toast.makeText(this, "تم تفعيل إشعارات الطلبات في الخلفية", Toast.LENGTH_LONG).show();
-            } else {
-                Toast.makeText(this, "تعذر تشغيل الخدمة الخلفية — سيُعاد التشغيل تلقائياً", Toast.LENGTH_LONG).show();
-            }
+            startServiceAndWatch();
         } catch (Throwable t) {
+        }
+    }
+
+    private void startServiceAndWatch() {
+        boolean ok = NotificationService.start(this);
+        showStatusToast(ok);
+        if (ok) {
+            Toast.makeText(this, "تم تفعيل إشعارات الطلبات في الخلفية", Toast.LENGTH_LONG).show();
+        } else {
+            Toast.makeText(this, "تعذر تشغيل الخدمة الخلفية — سيُعاد التشغيل تلقائياً", Toast.LENGTH_LONG).show();
         }
         // Watchdog: بعض الأجهزة (Xiaomi/Huawei/Samsung) تمنع التشغيل الخلفي من أول مرة —
         // نعيد المحاولة بفترات متباعدة أثناء فتح التطبيق
@@ -366,9 +386,9 @@ public class MainActivity extends Activity {
                 stallChecks(i + 1, 20000);
                 return;
             }
-            if (!overlayVisible) {
-                showStall(i == 1 ? "جارٍ تحميل اللوحة…" : "الصفحة لم تظهر بعد — استخدم الأزرار بالأسفل");
-            }
+if (!overlayVisible) {
+                    setSplashLoading();
+                }
             if (i == 2) {
                 // محاولة واحدة لإعادة التحميل لإنعاش المُصيّر إذا تجمّد
                 try {
@@ -377,7 +397,7 @@ public class MainActivity extends Activity {
                 }
             }
             if (i >= 3) {
-                ovTitle.setText("تعذر تحميل اللوحة — تأكد من الإنترنت أو جرّب إعادة التعيين");
+                setSplashError("تعذر تحميل اللوحة — تأكد من الإنترنت أو جرّب إعادة التعيين");
             }
             stallChecks(i + 1, i >= 2 ? 25000 : 10000);
         }, delay);
@@ -390,32 +410,52 @@ public class MainActivity extends Activity {
         overlay.setBackgroundColor(0xFFF3F4F8);
         overlay.setPadding(dp(24), dp(24), dp(24), dp(24));
 
+        // شعار المنصة أعلى شاشة التحميل
+        android.widget.ImageView logo = new android.widget.ImageView(this);
+        try {
+            logo.setImageResource(android.R.drawable.sym_def_app_icon);
+        } catch (Throwable t) {
+        }
+        int logoSize = dp(72);
+        LinearLayout.LayoutParams lpLogo = new LinearLayout.LayoutParams(logoSize, logoSize);
+        logo.setLayoutParams(lpLogo);
+        logo.setContentDescription("449LV");
+
+        // مؤشر تحميل أصلية
+        ovSpinner = new android.widget.ProgressBar(this);
+        LinearLayout.LayoutParams lpSpin = new LinearLayout.LayoutParams(dp(46), dp(46));
+        lpSpin.setMargins(0, dp(26), 0, dp(10));
+        ovSpinner.setLayoutParams(lpSpin);
+
         ovTitle = new TextView(this);
-        ovTitle.setText("جارٍ تحميل الصفحة…");
+        ovTitle.setText("جارٍ فتح لوحة المنيو…");
         ovTitle.setTextSize(19);
         ovTitle.setGravity(Gravity.CENTER);
         ovTitle.setTextColor(0xFF222222);
 
         TextView ovSub = new TextView(this);
-        ovSub.setText("إذا استمرت الشاشة السوداء استخدم الأزرار بالأسفل: أعد التحميل أو افتح الصفحة في المتصفح.");
+        ovSub.setText("سيفتح التطبيق لوحة المنيو الخاصة بك خلال لحظات — إن طُلب تسجيل الدخول عبر Google فسيكون داخل التطبيق نفسه.");
         ovSub.setGravity(Gravity.CENTER);
         ovSub.setTextSize(14);
         ovSub.setTextColor(0xFF666666);
-        ovSub.setPadding(0, dp(10), 0, dp(26));
+        ovSub.setPadding(0, dp(10), 0, dp(8));
 
-        LinearLayout btns = new LinearLayout(this);
-        btns.setOrientation(LinearLayout.VERTICAL);
-        btns.setGravity(Gravity.CENTER);
-        btns.addView(makeBtn("🔄 إعادة تحميل", v -> {
+        ovBtns = new LinearLayout(this);
+        ovBtns.setOrientation(LinearLayout.VERTICAL);
+        ovBtns.setGravity(Gravity.CENTER);
+        ovBtns.setVisibility(View.GONE);
+        ovBtns.addView(makeBtn("🔄 إعادة تحميل", v -> {
             if (web != null) web.reload();
         }));
-        btns.addView(makeBtn("🌐 فتح في المتصفح", v -> openBrowser()));
-        btns.addView(makeBtn("🔍 حالة الإشعارات والتشخيص", v -> showDiagDialog()));
-        btns.addView(makeBtn("🗑️ إعادة تعيين التطبيق", v -> resetApp()));
+        ovBtns.addView(makeBtn("🌐 فتح في المتصفح", v -> openBrowser()));
+        ovBtns.addView(makeBtn("🔍 حالة الإشعارات والتشخيص", v -> showDiagDialog()));
+        ovBtns.addView(makeBtn("🗑️ إعادة تعيين التطبيق", v -> resetApp()));
 
+        overlay.addView(logo);
+        overlay.addView(ovSpinner);
         overlay.addView(ovTitle);
         overlay.addView(ovSub);
-        overlay.addView(btns);
+        overlay.addView(ovBtns);
     }
 
     private Button makeBtn(String text, View.OnClickListener l) {
@@ -437,18 +477,40 @@ public class MainActivity extends Activity {
         return Math.round(getResources().getDisplayMetrics().density * v);
     }
 
-    private void showStall(String msg) {
+    private void setSplashLoading() {
         if (overlay == null) return;
         runOnUiThread(() -> {
-            savePageState(msg);
-            ovTitle.setText(msg);
-            overlayVisible = true;
-            if (web != null) web.setVisibility(View.INVISIBLE);
-            overlay.setVisibility(View.VISIBLE);
+            if (!overlayVisible) {
+                overlayVisible = true;
+                overlay.setVisibility(View.VISIBLE);
+                if (web != null) web.setVisibility(View.INVISIBLE);
+            }
+            if (ovSpinner != null) ovSpinner.setVisibility(View.VISIBLE);
+            if (ovBtns != null) ovBtns.setVisibility(View.GONE);
+            if (ovTitle != null) {
+                ovTitle.setVisibility(View.VISIBLE);
+                ovTitle.setText("جارٍ فتح لوحة المنيو…");
+            }
         });
     }
 
-    private void hideStall() {
+    private void setSplashError(String msg) {
+        if (overlay == null) return;
+        runOnUiThread(() -> {
+            overlayVisible = true;
+            overlay.setVisibility(View.VISIBLE);
+            if (web != null) web.setVisibility(View.INVISIBLE);
+            if (ovSpinner != null) ovSpinner.setVisibility(View.GONE);
+            if (ovBtns != null) ovBtns.setVisibility(View.VISIBLE);
+            if (ovTitle != null) {
+                ovTitle.setVisibility(View.VISIBLE);
+                ovTitle.setText(msg);
+            }
+            savePageState(msg);
+        });
+    }
+
+    private void hideSplash() {
         if (overlay == null || !overlayVisible) return;
         runOnUiThread(() -> {
             overlayVisible = false;
@@ -485,14 +547,13 @@ public class MainActivity extends Activity {
                         web.clearHistory();
                         web.clearFormData();
                         CookieManager.getInstance().removeAllCookies(null);
-                        web.loadUrl("https://449lv.com/menu-admin");
+                        getSharedPreferences("pushsrv", MODE_PRIVATE).edit().remove("cookie").apply();
                         lastUrl = "https://449lv.com/menu-admin";
-                        overlayVisible = false;
-                        overlay.setVisibility(View.GONE);
-                        if (web != null) web.setVisibility(View.VISIBLE);
                         pageFinished = false;
+                        web.loadUrl(lastUrl);
+                        setSplashLoading();
                         startStallWatch();
-                        Toast.makeText(this, "تمت إعادة التعيين — جارٍ تحميل الموقع", Toast.LENGTH_LONG).show();
+                        Toast.makeText(this, "تمت إعادة التعيين — جارٍ تحميل لوحة المنيو لتسجيل الدخول", Toast.LENGTH_LONG).show();
                     } catch (Throwable t) {
                         Toast.makeText(this, "خطأ: " + t.getMessage(), Toast.LENGTH_LONG).show();
                     }

@@ -75,22 +75,25 @@ jobs:
       - name: Prepare release files
         run: |
           mkdir -p dist
-          cp app/build/outputs/apk/release/app-release.apk dist/449lv-v2.9.apk
+          cp app/build/outputs/apk/release/app-release.apk dist/449lv-v3.0.apk
           cp app/build/outputs/apk/release/app-release.apk dist/449lv-latest.apk
 
-      - name: Publish GitHub Release (v2.9)
+      - name: Publish GitHub Release (v3.0)
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v2.9
-          name: 449LV v2.9
+          tag_name: v3.0
+          name: 449LV v3.0
           body: |
-            إصدار 449LV v2.9 — يدخلك مباشرة للوحة المنيو
+            إصدار 449LV v3.0 — شاشة تحميل أصلية ولوحة المنيو مباشرة
 
-            • عند فتح التطبيق تظهر لوحة المنيو الخاصة بك مباشرة (بدل صفحة الهبوط)
-            • إن لم تكن مسجلاً: تنتقل تلقائياً وداخل التطبيق لتسجيل الدخول بحساب Google ثم تعود للوحة — تُحفظ الجلسة ولا تُطلب مجدداً
-            • التسجيل والخروج والجلسة تتم كلها داخل التطبيق دون الحاجة للمتصفح
+            • شاشة تحميل بشعار المنصة لا تُغطي صفحة تسجيل دخول Google أبداً
+            • عند فتح التطبيق تظهر لوحة المنيو الخاصة بك مباشرة، وإن لم تكن مسجلاً تنتقل لداخل التطبيق لتسجيل الدخول بحساب Google ثم تعود للوحة
+            • الجلسة تُحفظ ولا يُطلب تسجيل الدخول مجدداً عند كل فتح
+            • نافذة إذن الإشعارات تظهر أول مرة تدخل فيها اللوحة (وليس فوق صفحة الدخول)
+            • زر «تفعيل الإشعارات» في اللوحة يطلب الإذن ويشغّل خدمة الفحص في الخلفية فوراً، مع إشعار تجريبي وصوت قابل للاختيار
+            • شاشة فشل واضحة مع أزرار: إعادة تحميل / الفتح في المتصفح / حالة الإشعارات والتشخيص / إعادة تعيين
           files: |
-            dist/449lv-v2.9.apk
+            dist/449lv-v3.0.apk
             dist/449lv-latest.apk
           overwrite: true
           fail_on_unmatched_files: true
