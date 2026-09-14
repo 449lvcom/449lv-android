@@ -1,7 +1,6 @@
 package com.ak449lv.clientapp;
 
 import android.app.Activity;
-import android.app.AlertDialog;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
@@ -9,71 +8,24 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.provider.Settings;
-import android.view.Gravity;
-import android.view.View;
 import android.webkit.CookieManager;
 import android.webkit.PermissionRequest;
 import android.webkit.WebChromeClient;
-import android.webkit.WebResourceError;
-import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
-import android.widget.Button;
-import android.widget.FrameLayout;
-import android.widget.LinearLayout;
-import android.widget.TextView;
 import android.widget.Toast;
 
 public class MainActivity extends Activity {
 
     private WebView web;
-    private String lastUrl = "https://449lv.com/menu-admin";
-    private int renderRecoverCount = 0;
-    private boolean pageFinished = false;
-    private String lastErr = null;
-    private LinearLayout overlay;
-    private TextView ovTitle;
-    private boolean overlayVisible = false;
-    private android.widget.ProgressBar ovSpinner;
-    private LinearLayout ovBtns;
-    private boolean serviceInitiated = false;
-    private boolean sessionRestored = false;
-
-    private static boolean isAuthFlow(String u) {
-        return u != null && (u.contains("accounts.google.com") || u.contains("/auth/callback") || u.contains("/api/auth/google"));
-    }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        // حفظ أي خطأ قاتل في التطبيق لتشخيصه من زر «🔍 حالة الإشعارات»
-        Thread.setDefaultUncaughtExceptionHandler((thread, t) -> {
-            try {
-                java.io.StringWriter sw = new java.io.StringWriter();
-                t.printStackTrace(new java.io.PrintWriter(sw));
-                String stack = sw.toString();
-                getSharedPreferences("pushsrv", MODE_PRIVATE).edit()
-                        .putString("crash", stack.substring(0, Math.min(1600, stack.length())))
-                        .putLong("crash_ts", System.currentTimeMillis())
-                        .commit();
-            } catch (Throwable t2) {
-            }
-            android.os.Process.killProcess(android.os.Process.myPid());
-        });
-
         web = new WebView(this);
-        FrameLayout root = new FrameLayout(this);
-        root.addView(web, new FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                FrameLayout.LayoutParams.MATCH_PARENT));
-        buildOverlay();
-        root.addView(overlay, new FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                FrameLayout.LayoutParams.MATCH_PARENT));
-        overlay.setVisibility(View.GONE);
-        setContentView(root);
+        setContentView(web);
 
         WebSettings s = web.getSettings();
         s.setJavaScriptEnabled(true);
@@ -91,66 +43,8 @@ public class MainActivity extends Activity {
 
         web.setWebViewClient(new WebViewClient() {
             @Override
-            public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
-                pageFinished = false;
-                lastErr = null;
-                // WebView يبقى مرئياً دائماً (لا إخفاء، لا طبقات تعلّق) كما في v2.5
-            }
-
-            @Override
             public void onPageFinished(WebView view, String url) {
-                pageFinished = true;
-                boolean authNow = isAuthFlow(url);
-                boolean crossed = !authNow && isAuthFlow(lastUrl);
                 saveSessionCookie();
-                lastUrl = url;
-                renderRecoverCount = 0;
-                lastErr = null;
-                // أثناء تسجيل الدخول عبر Google: لا نغطي الصفحة بأي شيء
-                if (!authNow) {
-                    savePageState("تم تحميل الصفحة");
-                    // إذن الإشعارات + الخدمة تُفعَّلان عند أول دخول فعلي للوحة فقط:
-                    // بعد اكتمال تسجيل الدخول عبر Google، أو عند فتح بجلسة محفوظة
-                    if (crossed || sessionRestored) {
-                        afterDashboardLoaded();
-                    }
-                    // تحقق من أن الصفحة تحتوي محتوى فعلي (ليست صفحة سوداء فارغة)
-                    view.evaluateJavascript(
-                            "(document.body ? document.body.innerText.trim().length : 0).toString()",
-                            value -> runOnUiThread(() -> {
-                                try {
-                                    String raw = value == null ? "0" : value.replace("\"", "");
-                                    int len = Integer.parseInt(raw);
-                                    if (len > 20) {
-                                        hideSplash();
-                                    } else {
-                                        savePageState("صفحة فارغة (محتوى=" + len + ")");
-                                        setSplashError("الصفحة فارغة — قد تكون بحاجة إلى تسجيل دخول أو إعادة تحميل");
-                                    }
-                                } catch (Throwable t) {
-                                    hideSplash();
-                                }
-                            })
-                    );
-                } else {
-                    hideSplash();
-                }
-            }
-
-            @Override
-            public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
-                if (Build.VERSION.SDK_INT >= 23 && request != null && request.isForMainFrame()) {
-                    String err;
-                    if (error == null) {
-                        err = "خطأ غير معروف";
-                    } else {
-                        err = String.valueOf(error.getDescription());
-                    }
-                    lastErr = err;
-                    if (!isAuthFlow(String.valueOf(request.getUrl()))) {
-                        setSplashError("تعذر تحميل اللوحة\n" + err);
-                    }
-                }
             }
         });
         web.setWebChromeClient(new WebChromeClient() {
@@ -174,56 +68,38 @@ public class MainActivity extends Activity {
         // جسر JavaScript → أندرويد: تتحكم أزرار الإشعارات في الموقع بالخدمة الأساسية داخل التطبيق
         web.addJavascriptInterface(new LvBridge(), "LvNative");
 
-        // معالجة رابط الإشعار: فتح لوحة المنيو مباشرة (أو الرابط القادم من الإشعار)
+        // معالجة رابط الإشعار: فتح رابط الدخول / لوحة التحكم عند الضغط
         String url = null;
         if (getIntent() != null) {
             url = getIntent().getStringExtra("url");
         }
         if (url == null || url.isEmpty() || !url.startsWith("https://449lv.com")) {
-            url = "https://449lv.com/menu-admin";
+            url = "https://449lv.com/app";
         }
-        lastUrl = url;
-
-        // استعادة جلسة الدخول المحفوظة حتى لا يُطلب تسجيل الدخول كل مرة
-        try {
-            String saved = getSharedPreferences("pushsrv", MODE_PRIVATE).getString("cookie", null);
-            if (saved != null && !saved.isEmpty()) {
-                CookieManager.getInstance().setCookie("https://449lv.com", saved);
-                sessionRestored = true;
-            }
-        } catch (Throwable t) {
-        }
-
         web.loadUrl(url);
-        startStallWatch();
-        // بدون أي تغطية: WebView يبقى ظاهراً دائماً كما كان في v2.5 الذي يعمل
+
+        // طلب الأذونات بعد اكتمال بناء الواجهة (بعض الأجهزة تتأثر عند البناء المتزامن مع WebView)
+        web.postDelayed(() -> ensurePermissions(), 800);
     }
 
-    // تُستدعى فقط عند أول وصول فعلي للوحة المنيو (وليس أثناء تسجيل الدخول عبر Google):
-    // طلب إذن الإشعارات + استثناء البطارية + تشغيل خدمة الفحص في الخلفية
-    private void afterDashboardLoaded() {
-        if (serviceInitiated) return;
-        serviceInitiated = true;
+    private void ensurePermissions() {
         try {
             requestNotificationPermission();
         } catch (Throwable t) {
         }
+        // استثناء البطارية يُطلب بعد حل إذن الإشعارات (لا نُشبّك حوارين فوق بعضهما)
         if (Build.VERSION.SDK_INT < 33) {
             ensureBatteryOptExempt();
         }
         try {
-            startServiceAndWatch();
+            boolean ok = NotificationService.start(this);
+            showStatusToast(ok);
+            if (ok) {
+                Toast.makeText(this, "تم تفعيل إشعارات الطلبات في الخلفية", Toast.LENGTH_LONG).show();
+            } else {
+                Toast.makeText(this, "تعذر تشغيل الخدمة الخلفية — سيُعاد التشغيل تلقائياً", Toast.LENGTH_LONG).show();
+            }
         } catch (Throwable t) {
-        }
-    }
-
-    private void startServiceAndWatch() {
-        boolean ok = NotificationService.start(this);
-        showStatusToast(ok);
-        if (ok) {
-            Toast.makeText(this, "تم تفعيل إشعارات الطلبات في الخلفية", Toast.LENGTH_LONG).show();
-        } else {
-            Toast.makeText(this, "تعذر تشغيل الخدمة الخلفية — سيُعاد التشغيل تلقائياً", Toast.LENGTH_LONG).show();
         }
         // Watchdog: بعض الأجهزة (Xiaomi/Huawei/Samsung) تمنع التشغيل الخلفي من أول مرة —
         // نعيد المحاولة بفترات متباعدة أثناء فتح التطبيق
@@ -232,7 +108,7 @@ public class MainActivity extends Activity {
 
     private void saveSessionCookie() {
         try {
-            String c = CookieManager.getInstance().getCookie("https://449lv.com");
+            String c = CookieManager.getInstance().getCookie("https://449lv.com/app");
             if (c != null && !c.isEmpty()) {
                 getSharedPreferences("pushsrv", MODE_PRIVATE).edit().putString("cookie", c).apply();
             }
@@ -277,14 +153,9 @@ public class MainActivity extends Activity {
                 SharedPreferences p = getSharedPreferences("pushsrv", MODE_PRIVATE);
                 long ts = p.getLong("diag_ts", 0);
                 String d = p.getString("diag", "لا يوجد تشخيص بعد — انتظر دقيقة");
-                String crash = p.getString("crash", null);
-                String cts = crash == null ? "" : ("\n--- سجل أعطال ---\n" + crash.substring(0, Math.min(400, crash.length())));
                 long age = ts == 0 ? -1 : (System.currentTimeMillis() - ts) / 1000;
                 String ago = age < 0 ? "لم يحدث بعد" : (age < 120 ? "قبل " + age + " ثانية" : "قبل " + (age / 60) + " دقيقة");
-                String page = p.getString("page_state", "") + " " + p.getString("page_url", "");
-                return "آخر فحص: " + ago + "\n" + d
-                        + (page.isEmpty() ? "" : "\n--- حالة الصفحة ---\n" + page)
-                        + cts;
+                return "آخر فحص: " + ago + "\n" + d;
             } catch (Throwable t) {
                 return "getDiag error";
             }
@@ -355,230 +226,6 @@ public class MainActivity extends Activity {
         }, 40_000L * step);
     }
 
-    private void startStallWatch() {
-        // لا تُغطى صفحة تسجيل الدخول عبر Google أبداً (قد يحتاج المستخدم وقتاً لكتابة بريده)
-        stallChecks(1, 8000);
-    }
-
-    private void stallChecks(final int i, final long delay) {
-        if (i > 4) return;
-        web.postDelayed(() -> {
-            if (pageFinished) return;
-            String cur = null;
-            try {
-                cur = web.getUrl();
-            } catch (Throwable t) {
-            }
-            if (isAuthFlow(cur)) {
-                // ننتظر انتهاء المستخدم من تسجيل الدخول ثم نعود للفحص
-                stallChecks(i + 1, 20000);
-                return;
-            }
-if (!pageFinished) {
-                // لا نغطي WebView أثناء التحميل العادي إطلاقاً — نجرب إعادة تحميل صامتة واحدة
-                if (i == 2) {
-                    try {
-                        if (web != null) web.reload();
-                    } catch (Throwable t) {
-                    }
-                }
-                if (i >= 3) {
-                    setSplashError("تعذر تحميل اللوحة — تأكد من الإنترنت أو جرّب إعادة التعيين");
-                }
-            }
-            stallChecks(i + 1, i >= 2 ? 25000 : 10000);
-        }, delay);
-    }
-
-    private void buildOverlay() {
-        overlay = new LinearLayout(this);
-        overlay.setOrientation(LinearLayout.VERTICAL);
-        overlay.setGravity(Gravity.CENTER);
-        overlay.setBackgroundColor(0xFFF3F4F8);
-        overlay.setPadding(dp(24), dp(24), dp(24), dp(24));
-
-        // شعار المنصة أعلى شاشة التحميل
-        android.widget.ImageView logo = new android.widget.ImageView(this);
-        try {
-            logo.setImageResource(android.R.drawable.sym_def_app_icon);
-        } catch (Throwable t) {
-        }
-        int logoSize = dp(72);
-        LinearLayout.LayoutParams lpLogo = new LinearLayout.LayoutParams(logoSize, logoSize);
-        logo.setLayoutParams(lpLogo);
-        logo.setContentDescription("449LV");
-
-        // مؤشر تحميل أصلية
-        ovSpinner = new android.widget.ProgressBar(this);
-        LinearLayout.LayoutParams lpSpin = new LinearLayout.LayoutParams(dp(46), dp(46));
-        lpSpin.setMargins(0, dp(26), 0, dp(10));
-        ovSpinner.setLayoutParams(lpSpin);
-
-        ovTitle = new TextView(this);
-        ovTitle.setText("جارٍ فتح لوحة المنيو…");
-        ovTitle.setTextSize(19);
-        ovTitle.setGravity(Gravity.CENTER);
-        ovTitle.setTextColor(0xFF222222);
-
-        TextView ovSub = new TextView(this);
-        ovSub.setText("سيفتح التطبيق لوحة المنيو الخاصة بك خلال لحظات — إن طُلب تسجيل الدخول عبر Google فسيكون داخل التطبيق نفسه.");
-        ovSub.setGravity(Gravity.CENTER);
-        ovSub.setTextSize(14);
-        ovSub.setTextColor(0xFF666666);
-        ovSub.setPadding(0, dp(10), 0, dp(8));
-
-        ovBtns = new LinearLayout(this);
-        ovBtns.setOrientation(LinearLayout.VERTICAL);
-        ovBtns.setGravity(Gravity.CENTER);
-        ovBtns.setVisibility(View.GONE);
-        ovBtns.addView(makeBtn("🔄 إعادة تحميل", v -> {
-            if (web != null) web.reload();
-        }));
-        ovBtns.addView(makeBtn("🌐 فتح في المتصفح", v -> openBrowser()));
-        ovBtns.addView(makeBtn("🔍 حالة الإشعارات والتشخيص", v -> showDiagDialog()));
-        ovBtns.addView(makeBtn("🗑️ إعادة تعيين التطبيق", v -> resetApp()));
-
-        overlay.addView(logo);
-        overlay.addView(ovSpinner);
-        overlay.addView(ovTitle);
-        overlay.addView(ovSub);
-        overlay.addView(ovBtns);
-    }
-
-    private Button makeBtn(String text, View.OnClickListener l) {
-        Button b = new Button(this);
-        b.setText(text);
-        b.setTextSize(15);
-        b.setTextColor(0xFFFFFFFF);
-        b.setBackgroundColor(0xFF1E6FFF);
-        b.setAllCaps(false);
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(52));
-        lp.setMargins(0, dp(8), 0, dp(8));
-        b.setLayoutParams(lp);
-        b.setOnClickListener(l);
-        return b;
-    }
-
-    private int dp(int v) {
-        return Math.round(getResources().getDisplayMetrics().density * v);
-    }
-
-    private void setSplashLoading() {
-        if (overlay == null) return;
-        runOnUiThread(() -> {
-            if (!overlayVisible) {
-                overlayVisible = true;
-                overlay.setVisibility(View.VISIBLE);
-            }
-            if (ovSpinner != null) ovSpinner.setVisibility(View.VISIBLE);
-            if (ovBtns != null) ovBtns.setVisibility(View.GONE);
-            if (ovTitle != null) {
-                ovTitle.setVisibility(View.VISIBLE);
-                ovTitle.setText("جارٍ فتح لوحة المنيو…");
-            }
-        });
-    }
-
-    private void setSplashError(String msg) {
-        if (overlay == null) return;
-        runOnUiThread(() -> {
-            overlayVisible = true;
-            overlay.setVisibility(View.VISIBLE);
-            if (ovSpinner != null) ovSpinner.setVisibility(View.GONE);
-            if (ovBtns != null) ovBtns.setVisibility(View.VISIBLE);
-            if (ovTitle != null) {
-                ovTitle.setVisibility(View.VISIBLE);
-                ovTitle.setText(msg);
-            }
-            savePageState(msg);
-        });
-    }
-
-    private void hideSplash() {
-        if (overlay == null || !overlayVisible) return;
-        runOnUiThread(() -> {
-            overlayVisible = false;
-            overlay.setVisibility(View.GONE);
-        });
-    }
-
-    private void savePageState(String state) {
-        try {
-            getSharedPreferences("pushsrv", MODE_PRIVATE).edit()
-                    .putString("page_state", state)
-                    .putString("page_url", lastUrl)
-                    .putLong("page_ts", System.currentTimeMillis())
-                    .apply();
-        } catch (Throwable t) {
-        }
-    }
-
-    private void openBrowser() {
-        try {
-            startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(lastUrl)));
-        } catch (Throwable t) {
-        }
-    }
-
-    private void resetApp() {
-        new AlertDialog.Builder(this)
-                .setTitle("إعادة تعيين التطبيق")
-                .setMessage("سيتم مسح بيانات المتصفح الداخلي والكاش والدخول، ثم نفتح لوحة المنيو لتسجيل الدخول من جديد عبر Google.")
-                .setPositiveButton("نعم، أعد التعيين", (di, w) -> {
-                    try {
-                        web.clearCache(true);
-                        web.clearHistory();
-                        web.clearFormData();
-                        CookieManager.getInstance().removeAllCookies(null);
-                        getSharedPreferences("pushsrv", MODE_PRIVATE).edit().remove("cookie").apply();
-                        lastUrl = "https://449lv.com/menu-admin";
-                        pageFinished = false;
-                        web.loadUrl(lastUrl);
-                        setSplashLoading();
-                        startStallWatch();
-                        Toast.makeText(this, "تمت إعادة التعيين — جارٍ تحميل لوحة المنيو لتسجيل الدخول", Toast.LENGTH_LONG).show();
-                    } catch (Throwable t) {
-                        Toast.makeText(this, "خطأ: " + t.getMessage(), Toast.LENGTH_LONG).show();
-                    }
-                })
-                .setNegativeButton("إلغاء", null)
-                .show();
-    }
-
-    private void showDiagDialog() {
-        try {
-            SharedPreferences p = getSharedPreferences("pushsrv", MODE_PRIVATE);
-            long ts = p.getLong("diag_ts", 0);
-            String d = p.getString("diag", "لا يوجد تشخيص بعد — انتظر دقيقة");
-            String crash = p.getString("crash", null);
-            String cr = crash == null ? "لا يوجد"
-                    : "\n" + crash.substring(0, Math.min(1200, crash.length()));
-            long age = ts == 0 ? -1 : (System.currentTimeMillis() - ts) / 1000;
-            String ago = age < 0 ? "لم يحدث بعد" : (age < 120 ? "قبل " + age + " ثانية" : "قبل " + (age / 60) + " دقيقة");
-            String page = p.getString("page_state", "لا توجد معلومات") + " · " + p.getString("page_url", "");
-            String msg = "آخر فحص: " + ago + "\n" + d
-                    + "\n\n--- حالة الصفحة ---\n" + page
-                    + "\n\n--- سجل أعطال ---\n" + cr;
-            new AlertDialog.Builder(this)
-                    .setTitle("🔍 التشخيص")
-                    .setMessage(msg)
-                    .setPositiveButton("نسخ", (di, w) -> {
-                        try {
-                            android.content.ClipboardManager cm =
-                                    (android.content.ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
-                            cm.setPrimaryClip(android.content.ClipData.newPlainText("diag", msg));
-                            Toast.makeText(this, "نُسخ — الصقه وأرسله", Toast.LENGTH_LONG).show();
-                        } catch (Throwable t) {
-                        }
-                    })
-                    .setNegativeButton("إغلاق", null)
-                    .show();
-        } catch (Throwable t) {
-            Toast.makeText(this, "diag: " + t.getMessage(), Toast.LENGTH_LONG).show();
-        }
-    }
-
     @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
@@ -587,8 +234,6 @@ if (!pageFinished) {
             String url = intent.getStringExtra("url");
             if (url != null && !url.isEmpty() && url.startsWith("https://449lv.com")) {
                 web.loadUrl(url);
-                pageFinished = false;
-                startStallWatch();
             }
         }
     }
