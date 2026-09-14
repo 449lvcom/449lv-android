@@ -75,21 +75,21 @@ jobs:
       - name: Prepare release files
         run: |
           mkdir -p dist
-          cp app/build/outputs/apk/release/app-release.apk dist/449lv-v2.7.apk
+          cp app/build/outputs/apk/release/app-release.apk dist/449lv-v2.8.apk
           cp app/build/outputs/apk/release/app-release.apk dist/449lv-latest.apk
 
-      - name: Publish GitHub Release (v2.7)
+      - name: Publish GitHub Release (v2.8)
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v2.7
-          name: 449LV v2.7
+          tag_name: v2.8
+          name: 449LV v2.8
           body: |
-            إصدار 449LV v2.7 — تثبيت الفتح
+            إصدار 449LV v2.8 — شاشة إنقاذ أصلية عند ت⿊ق الشاشة
 
-            • لو توقف التطبيق السوداء/البيضاء عند الفتح سببه انهيار مُصيّر الصفحة (WebView) على قليل من الأجهزة: يُعاد تحميل الصفحة تلقائياً بدل إغلاق التطبيق
-            • حفظ أي خطأ قاتل وعرضه عبر «🔍 حالة الإشعارات» لمعرفة السبب في خطوة واحدة
+            • إذا لم تُحمَّل الصفحة بعد 8 ثوانٍ (الشاشة سوداء فارغة)، تظهر طبقة إنقاذ أصلية بأزرار: إعادة التحميل / فتح في المتصفح / تشخيص الإشعارات (مع نسخ النص)
+            • تسجيل حالة الصفحة وموقع الخطأ تلقائياً في괜îح التشخيص الأصلي حتى لو كانت الصفحة معطّلة
           files: |
-            dist/449lv-v2.7.apk
+            dist/449lv-v2.8.apk
             dist/449lv-latest.apk
           overwrite: true
           fail_on_unmatched_files: true

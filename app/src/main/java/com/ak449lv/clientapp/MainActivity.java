@@ -1,6 +1,7 @@
 package com.ak449lv.clientapp;
 
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
@@ -8,12 +9,20 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.provider.Settings;
+import android.view.Gravity;
+import android.view.View;
 import android.webkit.CookieManager;
 import android.webkit.PermissionRequest;
 import android.webkit.WebChromeClient;
+import android.webkit.WebResourceError;
+import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.widget.Button;
+import android.widget.FrameLayout;
+import android.widget.LinearLayout;
+import android.widget.TextView;
 import android.widget.Toast;
 
 public class MainActivity extends Activity {
@@ -21,6 +30,11 @@ public class MainActivity extends Activity {
     private WebView web;
     private String lastUrl = "https://449lv.com/app";
     private int renderRecoverCount = 0;
+    private boolean pageFinished = false;
+    private String lastErr = null;
+    private LinearLayout overlay;
+    private TextView ovTitle;
+    private boolean overlayVisible = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -42,7 +56,16 @@ public class MainActivity extends Activity {
         });
 
         web = new WebView(this);
-        setContentView(web);
+        FrameLayout root = new FrameLayout(this);
+        root.addView(web, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT));
+        buildOverlay();
+        root.addView(overlay, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT));
+        overlay.setVisibility(View.GONE);
+        setContentView(root);
 
         WebSettings s = web.getSettings();
         s.setJavaScriptEnabled(true);
@@ -60,10 +83,39 @@ public class MainActivity extends Activity {
 
         web.setWebViewClient(new WebViewClient() {
             @Override
+            public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
+                pageFinished = false;
+                lastErr = null;
+                if (overlayVisible) {
+                    overlayVisible = false;
+                    overlay.setVisibility(View.GONE);
+                }
+            }
+
+            @Override
             public void onPageFinished(WebView view, String url) {
+                pageFinished = true;
                 saveSessionCookie();
                 lastUrl = url;
                 renderRecoverCount = 0;
+                lastErr = null;
+                savePageState("تم تحميل الصفحة");
+                hideStall();
+            }
+
+            @Override
+            public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
+                if (Build.VERSION.SDK_INT >= 23 && request != null && request.isForMainFrame()) {
+                    String err;
+                    if (error == null) {
+                        err = "خطأ غير معروف";
+                    } else {
+                        err = String.valueOf(error.getDescription());
+                    }
+                    lastErr = err;
+                    savePageState("خطأ تحميل: " + err);
+                    showStall("تعذر تحميل الصفحة\n" + err);
+                }
             }
         });
         web.setWebChromeClient(new WebChromeClient() {
@@ -97,6 +149,7 @@ public class MainActivity extends Activity {
         }
         lastUrl = url;
         web.loadUrl(url);
+        startStallWatch();
 
         // طلب الأذونات بعد اكتمال بناء الواجهة (بعض الأجهزة تتأثر عند البناء المتزامن مع WebView)
         web.postDelayed(() -> ensurePermissions(), 800);
@@ -177,7 +230,10 @@ public class MainActivity extends Activity {
                 String cts = crash == null ? "" : ("\n--- سجل أعطال ---\n" + crash.substring(0, Math.min(400, crash.length())));
                 long age = ts == 0 ? -1 : (System.currentTimeMillis() - ts) / 1000;
                 String ago = age < 0 ? "لم يحدث بعد" : (age < 120 ? "قبل " + age + " ثانية" : "قبل " + (age / 60) + " دقيقة");
-                return "آخر فحص: " + ago + "\n" + d + cts;
+                String page = p.getString("page_state", "") + " " + p.getString("page_url", "");
+                return "آخر فحص: " + ago + "\n" + d
+                        + (page.isEmpty() ? "" : "\n--- حالة الصفحة ---\n" + page)
+                        + cts;
             } catch (Throwable t) {
                 return "getDiag error";
             }
@@ -248,6 +304,140 @@ public class MainActivity extends Activity {
         }, 40_000L * step);
     }
 
+    private void startStallWatch() {
+        // تُعرض طبقة الإنقاذ إذا لم تُحمَّل الصفحة (شاشة سوداء غالباً بسبب انهيار مُصيّر WebView)
+        for (int delaySec : new int[]{8, 14}) {
+            web.postDelayed(() -> {
+                if (!pageFinished && !overlayVisible && overlay != null) {
+                    showStall("الصفحة لم تظهر بعد… جارٍ المحاولة");
+                }
+            }, delaySec * 1000L);
+        }
+    }
+
+    private void buildOverlay() {
+        overlay = new LinearLayout(this);
+        overlay.setOrientation(LinearLayout.VERTICAL);
+        overlay.setGravity(Gravity.CENTER);
+        overlay.setBackgroundColor(0xFFF3F4F8);
+        overlay.setPadding(dp(24), dp(24), dp(24), dp(24));
+
+        ovTitle = new TextView(this);
+        ovTitle.setText("جارٍ تحميل الصفحة…");
+        ovTitle.setTextSize(19);
+        ovTitle.setGravity(Gravity.CENTER);
+        ovTitle.setTextColor(0xFF222222);
+
+        TextView ovSub = new TextView(this);
+        ovSub.setText("إذا استمرت الشاشة السوداء استخدم الأزرار بالأسفل: أعد التحميل أو افتح الصفحة في المتصفح.");
+        ovSub.setGravity(Gravity.CENTER);
+        ovSub.setTextSize(14);
+        ovSub.setTextColor(0xFF666666);
+        ovSub.setPadding(0, dp(10), 0, dp(26));
+
+        LinearLayout btns = new LinearLayout(this);
+        btns.setOrientation(LinearLayout.VERTICAL);
+        btns.setGravity(Gravity.CENTER);
+        btns.addView(makeBtn("🔄 إعادة تحميل", v -> {
+            if (web != null) web.reload();
+        }));
+        btns.addView(makeBtn("🌐 فتح في المتصفح", v -> openBrowser()));
+        btns.addView(makeBtn("🔍 حالة الإشعارات والتشخيص", v -> showDiagDialog()));
+
+        overlay.addView(ovTitle);
+        overlay.addView(ovSub);
+        overlay.addView(btns);
+    }
+
+    private Button makeBtn(String text, View.OnClickListener l) {
+        Button b = new Button(this);
+        b.setText(text);
+        b.setTextSize(15);
+        b.setTextColor(0xFFFFFFFF);
+        b.setBackgroundColor(0xFF1E6FFF);
+        b.setAllCaps(false);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(52));
+        lp.setMargins(0, dp(8), 0, dp(8));
+        b.setLayoutParams(lp);
+        b.setOnClickListener(l);
+        return b;
+    }
+
+    private int dp(int v) {
+        return Math.round(getResources().getDisplayMetrics().density * v);
+    }
+
+    private void showStall(String msg) {
+        if (overlay == null) return;
+        runOnUiThread(() -> {
+            savePageState(msg);
+            ovTitle.setText(msg);
+            overlayVisible = true;
+            overlay.setVisibility(View.VISIBLE);
+            overlay.bringToFront();
+        });
+    }
+
+    private void hideStall() {
+        if (overlay == null || !overlayVisible) return;
+        runOnUiThread(() -> {
+            overlayVisible = false;
+            overlay.setVisibility(View.GONE);
+        });
+    }
+
+    private void savePageState(String state) {
+        try {
+            getSharedPreferences("pushsrv", MODE_PRIVATE).edit()
+                    .putString("page_state", state)
+                    .putString("page_url", lastUrl)
+                    .putLong("page_ts", System.currentTimeMillis())
+                    .apply();
+        } catch (Throwable t) {
+        }
+    }
+
+    private void openBrowser() {
+        try {
+            startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(lastUrl)));
+        } catch (Throwable t) {
+        }
+    }
+
+    private void showDiagDialog() {
+        try {
+            SharedPreferences p = getSharedPreferences("pushsrv", MODE_PRIVATE);
+            long ts = p.getLong("diag_ts", 0);
+            String d = p.getString("diag", "لا يوجد تشخيص بعد — انتظر دقيقة");
+            String crash = p.getString("crash", null);
+            String cr = crash == null ? "لا يوجد"
+                    : "\n" + crash.substring(0, Math.min(1200, crash.length()));
+            long age = ts == 0 ? -1 : (System.currentTimeMillis() - ts) / 1000;
+            String ago = age < 0 ? "لم يحدث بعد" : (age < 120 ? "قبل " + age + " ثانية" : "قبل " + (age / 60) + " دقيقة");
+            String page = p.getString("page_state", "لا توجد معلومات") + " · " + p.getString("page_url", "");
+            String msg = "آخر فحص: " + ago + "\n" + d
+                    + "\n\n--- حالة الصفحة ---\n" + page
+                    + "\n\n--- سجل أعطال ---\n" + cr;
+            new AlertDialog.Builder(this)
+                    .setTitle("🔍 التشخيص")
+                    .setMessage(msg)
+                    .setPositiveButton("نسخ", (di, w) -> {
+                        try {
+                            android.content.ClipboardManager cm =
+                                    (android.content.ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+                            cm.setPrimaryClip(android.content.ClipData.newPlainText("diag", msg));
+                            Toast.makeText(this, "نُسخ — الصقه وأرسله", Toast.LENGTH_LONG).show();
+                        } catch (Throwable t) {
+                        }
+                    })
+                    .setNegativeButton("إغلاق", null)
+                    .show();
+        } catch (Throwable t) {
+            Toast.makeText(this, "diag: " + t.getMessage(), Toast.LENGTH_LONG).show();
+        }
+    }
+
     @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
@@ -256,6 +446,8 @@ public class MainActivity extends Activity {
             String url = intent.getStringExtra("url");
             if (url != null && !url.isEmpty() && url.startsWith("https://449lv.com")) {
                 web.loadUrl(url);
+                pageFinished = false;
+                startStallWatch();
             }
         }
     }
