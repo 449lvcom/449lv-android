@@ -65,32 +65,6 @@ public class MainActivity extends Activity {
                 lastUrl = url;
                 renderRecoverCount = 0;
             }
-
-            @Override
-            public boolean onRenderProcessGone(WebView view, android.webkit.WebViewClient.RenderProcessGoneDetail detail) {
-                // انهيار مُصيّر الصفحة (يحدث على بعض الأجهزة مع تحديثات WebView):
-                // لا نسمح للعملية بالموت — نصفّي الصفحة ونعيد تحميلها
-                try {
-                    boolean crashed = detail != null && detail.didCrash();
-                    android.util.Log.e("MainActivity", "render gone crashed=" + crashed);
-                } catch (Throwable t) {
-                }
-                runOnUiThread(() -> {
-                    try {
-                        if (web != null) {
-                            web.loadUrl("about:blank");
-                            if (renderRecoverCount < 3) {
-                                renderRecoverCount++;
-                                web.loadUrl(lastUrl);
-                            } else {
-                                web.loadUrl("https://449lv.com/app");
-                            }
-                        }
-                    } catch (Throwable t) {
-                    }
-                });
-                return true;
-            }
         });
         web.setWebChromeClient(new WebChromeClient() {
             @Override
