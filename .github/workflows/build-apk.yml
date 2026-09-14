@@ -8,6 +8,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -55,6 +57,31 @@ jobs:
           name: 449lv-apk-report
           path: apk-report.txt
           if-no-files-found: error
+
+      - name: Prepare release files
+        run: |
+          mkdir -p dist
+          cp app/build/outputs/apk/release/app-release.apk dist/449lv-v2.3.apk
+          cp app/build/outputs/apk/release/app-release.apk dist/449lv-latest.apk
+
+      - name: Publish GitHub Release (v2.3)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v2.3
+          name: 449LV v2.3
+          body: |
+            إصدار 449LV v2.3
+
+            • إشعارات الطلبات الفورية في الخلفية الدائمة (Foreground Service + استئناف بعد إعادة التشغيل)
+            • إذن إشعارات فوري عند الفتح + منح أذونات الويب تلقائياً في WebView
+            • زر "إشعار تجريبي" داخل التطبيق يُرسل إشعاراً حقيقياً فورياً
+            • إصلاح جذرية عبر إعادة هيكلة الأذونات الأصلية (POST_NOTIFICATIONS وغيرها في الـ APK)
+            • (السيرفر: إصلاح تشفير Web Push RFC 8291)
+          files: |
+            dist/449lv-v2.3.apk
+            dist/449lv-latest.apk
+          overwrite: true
+          fail_on_unmatched_files: true
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
