@@ -485,7 +485,6 @@ public class MainActivity extends Activity {
                         web.clearHistory();
                         web.clearFormData();
                         CookieManager.getInstance().removeAllCookies(null);
-                        CookieManager.getInstance().removeAllSessionCookies(null);
                         web.loadUrl("https://449lv.com/menu-admin");
                         lastUrl = "https://449lv.com/menu-admin";
                         overlayVisible = false;
