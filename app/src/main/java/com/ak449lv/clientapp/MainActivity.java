@@ -86,10 +86,6 @@ public class MainActivity extends Activity {
             public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
                 pageFinished = false;
                 lastErr = null;
-                if (overlayVisible) {
-                    overlayVisible = false;
-                    overlay.setVisibility(View.GONE);
-                }
             }
 
             @Override
@@ -100,7 +96,24 @@ public class MainActivity extends Activity {
                 renderRecoverCount = 0;
                 lastErr = null;
                 savePageState("تم تحميل الصفحة");
-                hideStall();
+                // تحقق من أن الصفحة تحتوي محتوى فعلي (ليست صفحة سوداء فارغة)
+                view.evaluateJavascript(
+                        "(document.body ? document.body.innerText.trim().length : 0).toString()",
+                        value -> runOnUiThread(() -> {
+                            try {
+                                String raw = value == null ? "0" : value.replace("\"", "");
+                                int len = Integer.parseInt(raw);
+                                if (len > 20) {
+                                    hideStall();
+                                } else {
+                                    savePageState("صفحة فارغة (محتوى=" + len + ")");
+                                    showStall("الصفحة فارغة — قد تكون بحاجة إلى تسجيل دخول أو إعادة تحميل");
+                                }
+                            } catch (Throwable t) {
+                                hideStall();
+                            }
+                        })
+                );
             }
 
             @Override
@@ -138,6 +151,22 @@ public class MainActivity extends Activity {
 
         // جسر JavaScript → أندرويد: تتحكم أزرار الإشعارات في الموقع بالخدمة الأساسية داخل التطبيق
         web.addJavascriptInterface(new LvBridge(), "LvNative");
+
+        // شاشة الإنقاذ تظهر فوراً — تختفي فقط إذا تحمّلت الصفحة فعلاً
+        overlay.setVisibility(View.VISIBLE);
+        overlayVisible = true;
+        if (web != null) web.setVisibility(View.INVISIBLE);
+
+        // مسح ذاكرة WebView المؤقتة مرة واحدة عند أول تشغيل لهذه النسخة
+        SharedPreferences boot = getSharedPreferences("pushsrv", MODE_PRIVATE);
+        if (!boot.getBoolean("v2_8_boot_cleared", false)) {
+            try {
+                web.clearCache(true);
+                web.clearHistory();
+            } catch (Throwable t) {
+            }
+            boot.edit().putBoolean("v2_8_boot_cleared", true).apply();
+        }
 
         // معالجة رابط الإشعار: فتح رابط الدخول / لوحة التحكم عند الضغط
         String url = null;
@@ -343,6 +372,7 @@ public class MainActivity extends Activity {
         }));
         btns.addView(makeBtn("🌐 فتح في المتصفح", v -> openBrowser()));
         btns.addView(makeBtn("🔍 حالة الإشعارات والتشخيص", v -> showDiagDialog()));
+        btns.addView(makeBtn("🗑️ إعادة تعيين التطبيق", v -> resetApp()));
 
         overlay.addView(ovTitle);
         overlay.addView(ovSub);
@@ -374,8 +404,8 @@ public class MainActivity extends Activity {
             savePageState(msg);
             ovTitle.setText(msg);
             overlayVisible = true;
+            if (web != null) web.setVisibility(View.INVISIBLE);
             overlay.setVisibility(View.VISIBLE);
-            overlay.bringToFront();
         });
     }
 
@@ -384,6 +414,7 @@ public class MainActivity extends Activity {
         runOnUiThread(() -> {
             overlayVisible = false;
             overlay.setVisibility(View.GONE);
+            if (web != null) web.setVisibility(View.VISIBLE);
         });
     }
 
@@ -403,6 +434,32 @@ public class MainActivity extends Activity {
             startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(lastUrl)));
         } catch (Throwable t) {
         }
+    }
+
+    private void resetApp() {
+        new AlertDialog.Builder(this)
+                .setTitle("إعادة تعيين التطبيق")
+                .setMessage("سيتم مسح جميع بيانات المتصفح الداخلي والكاش ثم إعادة تحميل الموقع من جديد. لن يُمسح شيء من حسابك على الموقع.")
+                .setPositiveButton("نعم، أعد التعيين", (di, w) -> {
+                    try {
+                        web.clearCache(true);
+                        web.clearHistory();
+                        web.clearFormData();
+                        CookieManager.getInstance().removeAllCookies(null);
+                        web.loadUrl("https://449lv.com/app");
+                        lastUrl = "https://449lv.com/app";
+                        overlayVisible = false;
+                        overlay.setVisibility(View.GONE);
+                        if (web != null) web.setVisibility(View.VISIBLE);
+                        pageFinished = false;
+                        startStallWatch();
+                        Toast.makeText(this, "تمت إعادة التعيين — جارٍ تحميل الموقع", Toast.LENGTH_LONG).show();
+                    } catch (Throwable t) {
+                        Toast.makeText(this, "خطأ: " + t.getMessage(), Toast.LENGTH_LONG).show();
+                    }
+                })
+                .setNegativeButton("إلغاء", null)
+                .show();
     }
 
     private void showDiagDialog() {
