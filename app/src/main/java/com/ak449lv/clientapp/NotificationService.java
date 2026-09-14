@@ -49,7 +49,9 @@ public class NotificationService extends Service {
 
     private static volatile boolean sRunning = false;
 
-    private Handler handler;
+    private final Handler handler = new Handler(getMainLooper());
+    private final Object pollLock = new Object();
+    private boolean pollInFlight = false;
     private boolean running = false;
     private boolean fgOk = false;
     private int retryFg = 0;
@@ -286,7 +288,6 @@ public class NotificationService extends Service {
             fgOk = false;
             retryFg = 0;
         }
-        if (handler == null) handler = new Handler(getMainLooper());
         ensureChannels();
         startAsForeground();
         if (!running) {
@@ -307,7 +308,7 @@ public class NotificationService extends Service {
             Intent i = new Intent(getApplicationContext(), NotificationService.class);
             if (Build.VERSION.SDK_INT >= 26) startForegroundService(i);
             else startService(i);
-            if (handler != null && !running) {
+            if (!running) {
                 running = true;
                 sRunning = true;
                 handler.post(poller);
@@ -322,7 +323,7 @@ public class NotificationService extends Service {
     public void onDestroy() {
         running = false;
         sRunning = false;
-        if (handler != null) handler.removeCallbacksAndMessages(null);
+        handler.removeCallbacksAndMessages(null);
         cancelRestartAlarm();
         super.onDestroy();
     }
@@ -405,11 +406,9 @@ public class NotificationService extends Service {
             fgOk = false;
             if (retryFg < 30) {
                 retryFg++;
-                if (handler != null) {
-                    handler.postDelayed(() -> {
-                        if (running) startAsForeground();
-                    }, 5000L);
-                }
+                handler.postDelayed(() -> {
+                    if (running) startAsForeground();
+                }, 5000L);
             }
         }
     }
@@ -418,10 +417,28 @@ public class NotificationService extends Service {
         @Override
         public void run() {
             if (!running) return;
+            synchronized (pollLock) {
+                if (pollInFlight) {
+                    handler.postDelayed(this, POLL_MS);
+                    return;
+                }
+                pollInFlight = true;
+            }
             try {
-                doPoll();
+                new Thread(() -> {
+                    try {
+                        doPoll();
+                    } catch (Throwable t) {
+                        // أخطاء الشبكة/التحليل تُتجاهل وتُعاد المحاولة في الدورة التالية
+                    }
+                    synchronized (pollLock) {
+                        pollInFlight = false;
+                    }
+                }, "push-poll").start();
             } catch (Throwable t) {
-                // أخطاء الشبكة/التحليل تُتجاهل وتُعاد المحاولة في الدورة التالية
+                synchronized (pollLock) {
+                    pollInFlight = false;
+                }
             }
             handler.postDelayed(this, POLL_MS);
         }

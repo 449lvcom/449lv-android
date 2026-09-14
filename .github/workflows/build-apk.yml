@@ -61,23 +61,23 @@ jobs:
       - name: Prepare release files
         run: |
           mkdir -p dist
-          cp app/build/outputs/apk/release/app-release.apk dist/449lv-v2.5.apk
+          cp app/build/outputs/apk/release/app-release.apk dist/449lv-v2.6.apk
           cp app/build/outputs/apk/release/app-release.apk dist/449lv-latest.apk
 
-      - name: Publish GitHub Release (v2.5)
+      - name: Publish GitHub Release (v2.6)
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v2.5
-          name: 449LV v2.5
+          tag_name: v2.6
+          name: 449LV v2.6
           body: |
-            إصدار 449LV v2.5 — تشخيص الإشعارات
+            إصدار 449LV v2.6 — إصلاح جذري للسبب الحقيقي
 
-            • زر «🔍 حالة الإشعارات» داخل تطبيق أندرويد يعرض آخر نتيجة فحص (عدد الطلبات الجديدة، رمز الاستجابة، حالة الجلسة) فوراً
-            • لا يُبتلع أول طلب قيد الانتظار عند تفعيل الإشعارات لأول مرة — يُنبَّه عليه فوراً
-            • إذا انتهت الجلسة أو لم يسجّل الدخول: إشعار واضح بدل التوقف الصامت
-            • نغمات إشعارات قابلة للتحكم + منبّه إعادة تشغيل تلقائي (من إصدار 2.4)
+            • السابق: كان فحص الطلبات يعمل على مؤشر الواجهة الرئيسي ويفشل فوراً (NetworkOnMainThreadException) — هذا هو سبب عدم وصول الإشعارات رغم عمل التجربة والخلفية
+            • الآن: الفحص يعمل على مؤشر خلفية مستقل، فلا يمنعه نظام أندرويد بعد الآن
+            • بقي التشخيص المباشر (🔍 حالة الإشعارات) في لوحة التحكم لرصد أي مشكلة قادمة فوراً
+            • نغمات قابلة للتحكم + إشعار أول طلب قيد الانتظار + تنبيه انتهاء الجلسة (من 2.4/2.5)
           files: |
-            dist/449lv-v2.5.apk
+            dist/449lv-v2.6.apk
             dist/449lv-latest.apk
           overwrite: true
           fail_on_unmatched_files: true
