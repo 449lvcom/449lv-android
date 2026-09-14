@@ -19,10 +19,27 @@ import android.widget.Toast;
 public class MainActivity extends Activity {
 
     private WebView web;
+    private String lastUrl = "https://449lv.com/app";
+    private int renderRecoverCount = 0;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+
+        // حفظ أي خطأ قاتل في التطبيق لتشخيصه من زر «🔍 حالة الإشعارات»
+        Thread.setDefaultUncaughtExceptionHandler((thread, t) -> {
+            try {
+                java.io.StringWriter sw = new java.io.StringWriter();
+                t.printStackTrace(new java.io.PrintWriter(sw));
+                String stack = sw.toString();
+                getSharedPreferences("pushsrv", MODE_PRIVATE).edit()
+                        .putString("crash", stack.substring(0, Math.min(1600, stack.length())))
+                        .putLong("crash_ts", System.currentTimeMillis())
+                        .commit();
+            } catch (Throwable t2) {
+            }
+            android.os.Process.killProcess(android.os.Process.myPid());
+        });
 
         web = new WebView(this);
         setContentView(web);
@@ -45,6 +62,34 @@ public class MainActivity extends Activity {
             @Override
             public void onPageFinished(WebView view, String url) {
                 saveSessionCookie();
+                lastUrl = url;
+                renderRecoverCount = 0;
+            }
+
+            @Override
+            public boolean onRenderProcessGone(WebView view, android.webkit.WebViewClient.RenderProcessGoneDetail detail) {
+                // انهيار مُصيّر الصفحة (يحدث على بعض الأجهزة مع تحديثات WebView):
+                // لا نسمح للعملية بالموت — نصفّي الصفحة ونعيد تحميلها
+                try {
+                    boolean crashed = detail != null && detail.didCrash();
+                    android.util.Log.e("MainActivity", "render gone crashed=" + crashed);
+                } catch (Throwable t) {
+                }
+                runOnUiThread(() -> {
+                    try {
+                        if (web != null) {
+                            web.loadUrl("about:blank");
+                            if (renderRecoverCount < 3) {
+                                renderRecoverCount++;
+                                web.loadUrl(lastUrl);
+                            } else {
+                                web.loadUrl("https://449lv.com/app");
+                            }
+                        }
+                    } catch (Throwable t) {
+                    }
+                });
+                return true;
             }
         });
         web.setWebChromeClient(new WebChromeClient() {
@@ -76,6 +121,7 @@ public class MainActivity extends Activity {
         if (url == null || url.isEmpty() || !url.startsWith("https://449lv.com")) {
             url = "https://449lv.com/app";
         }
+        lastUrl = url;
         web.loadUrl(url);
 
         // طلب الأذونات بعد اكتمال بناء الواجهة (بعض الأجهزة تتأثر عند البناء المتزامن مع WebView)
@@ -153,9 +199,11 @@ public class MainActivity extends Activity {
                 SharedPreferences p = getSharedPreferences("pushsrv", MODE_PRIVATE);
                 long ts = p.getLong("diag_ts", 0);
                 String d = p.getString("diag", "لا يوجد تشخيص بعد — انتظر دقيقة");
+                String crash = p.getString("crash", null);
+                String cts = crash == null ? "" : ("\n--- سجل أعطال ---\n" + crash.substring(0, Math.min(400, crash.length())));
                 long age = ts == 0 ? -1 : (System.currentTimeMillis() - ts) / 1000;
                 String ago = age < 0 ? "لم يحدث بعد" : (age < 120 ? "قبل " + age + " ثانية" : "قبل " + (age / 60) + " دقيقة");
-                return "آخر فحص: " + ago + "\n" + d;
+                return "آخر فحص: " + ago + "\n" + d + cts;
             } catch (Throwable t) {
                 return "getDiag error";
             }

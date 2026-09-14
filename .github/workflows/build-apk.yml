@@ -61,23 +61,21 @@ jobs:
       - name: Prepare release files
         run: |
           mkdir -p dist
-          cp app/build/outputs/apk/release/app-release.apk dist/449lv-v2.6.apk
+          cp app/build/outputs/apk/release/app-release.apk dist/449lv-v2.7.apk
           cp app/build/outputs/apk/release/app-release.apk dist/449lv-latest.apk
 
-      - name: Publish GitHub Release (v2.6)
+      - name: Publish GitHub Release (v2.7)
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v2.6
-          name: 449LV v2.6
+          tag_name: v2.7
+          name: 449LV v2.7
           body: |
-            إصدار 449LV v2.6 — إصلاح جذري للسبب الحقيقي
+            إصدار 449LV v2.7 — تثبيت الفتح
 
-            • السابق: كان فحص الطلبات يعمل على مؤشر الواجهة الرئيسي ويفشل فوراً (NetworkOnMainThreadException) — هذا هو سبب عدم وصول الإشعارات رغم عمل التجربة والخلفية
-            • الآن: الفحص يعمل على مؤشر خلفية مستقل، فلا يمنعه نظام أندرويد بعد الآن
-            • بقي التشخيص المباشر (🔍 حالة الإشعارات) في لوحة التحكم لرصد أي مشكلة قادمة فوراً
-            • نغمات قابلة للتحكم + إشعار أول طلب قيد الانتظار + تنبيه انتهاء الجلسة (من 2.4/2.5)
+            • لو توقف التطبيق السوداء/البيضاء عند الفتح سببه انهيار مُصيّر الصفحة (WebView) على قليل من الأجهزة: يُعاد تحميل الصفحة تلقائياً بدل إغلاق التطبيق
+            • حفظ أي خطأ قاتل وعرضه عبر «🔍 حالة الإشعارات» لمعرفة السبب في خطوة واحدة
           files: |
-            dist/449lv-v2.6.apk
+            dist/449lv-v2.7.apk
             dist/449lv-latest.apk
           overwrite: true
           fail_on_unmatched_files: true
